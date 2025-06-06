@@ -225,10 +225,16 @@ def get_languages():
         cur.close()
         conn.close()
 
-        data = {
-            {"id": row[0], "code": row[1].strip(), "title": row[2]}
-            for row in rows
-        }
+        #data = {
+        #    {"id": row[0], "code": row[1].strip(), "title": row[2]}
+        #    for row in rows
+        #}
+
+        data = ""
+        for row in rows:
+            data = data + "{"id": row[0], "code": row[1].strip(), "title": row[2]},"
+        
+        data = data[:-1]
         return jsonify(data), 200
 
     except Exception as e:
