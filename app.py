@@ -229,10 +229,10 @@ def get_languages():
         #    {"id": row[0], "code": row[1].strip(), "title": row[2]}
         #    for row in rows
         #]
-
+        
         data = ""
         for row in rows:
-            data = data + "{"id": row[0], "code": row[1].strip(), "title": row[2]},"
+            data = data + "{id:"+str(row[0])+", code:"+str(row[1].strip())+", title:"+str(row[2])+"},"
         
         data = data[:-1]
         #return jsonify(data), 200
