@@ -246,7 +246,7 @@ def get_languages():
 def get_currencies():
 
     lang = request.args.get('lang', 'ua')
-    if lang = "":
+    if lang == '':
         lang = 'ua'
     
     try:
