@@ -234,17 +234,47 @@ def get_languages():
         data = {
             "count"     :   row_count,
             "languages" :   datarows
-            }
-        
-        #data = ""
-        #for row in rows:
-        #    data = data + '{"id":'+str(row[0])+', "code":"'+str(row[1].strip())+'", "title":"'+str(row[2])+'"},'
-        #data = data[:-1]
+        }
         
         return jsonify(data), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/currencies")
+def get_currencies():
+
+    lang = request.args.get('lang', 'ua')
+    if lang = "":
+        lang = 'ua'
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, code, title FROM public.currencies ORDER BY id;")
+        rows = cur.fetchall()
+        row_count = cur.rowcount
+        cur.close()
+        conn.close()
+
+        datarows = [
+            {"id": row[0], "code": row[1].strip(), "title": row[2]}
+            for row in rows
+        ]
+
+        data = {
+            "count"     :   row_count,
+            "currencies" :   datarows
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 # Запуск приложения (локально или на хостинге)
 if __name__ == "__main__":
