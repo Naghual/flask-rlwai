@@ -222,13 +222,19 @@ def get_languages():
         cur = conn.cursor()
         cur.execute("SELECT id, code, title FROM public.languages ORDER BY id;")
         rows = cur.fetchall()
+        row_count = cur.rowcount
         cur.close()
         conn.close()
 
-        data = [
+        datarows = [
             {"id": row[0], "code": row[1].strip(), "title": row[2]}
             for row in rows
         ]
+
+        data = {
+            "count"     :   row_count,
+            "languages" :   datarows
+            }
         
         #data = ""
         #for row in rows:
