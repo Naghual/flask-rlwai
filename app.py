@@ -252,7 +252,9 @@ def get_currencies():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, code, title FROM public.currencies ORDER BY id;")
+        #cur.execute("SELECT id, code, title FROM public.currencies ORDER BY id;")
+        cur.execute("SELECT * FROM public.currencies WHERE lang = '" + lang + "' ORDER BY id ASC;")
+        
         rows = cur.fetchall()
         row_count = cur.rowcount
         cur.close()
@@ -262,7 +264,7 @@ def get_currencies():
             {"id": row[0], "code": row[1].strip(), "title": row[2]}
             for row in rows
         ]
-
+        
         data = {
             "count"     :   row_count,
             "currencies" :   datarows
