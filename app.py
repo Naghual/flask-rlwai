@@ -9,6 +9,7 @@ if os.environ.get("RAILWAY_ENVIRONMENT") is None:
 
 app = Flask(__name__)
 
+# --------------------------------------------------------------
 # функция коннекта в БД, вызывается из каждого роута, где надо обращаться к базе
 def get_db_connection():
     db_url = os.getenv("DATABASE_URL")   # Читаем URL базы из переменной окружения
@@ -16,10 +17,13 @@ def get_db_connection():
         raise RuntimeError("DATABASE_URL не задана.")
     return psycopg2.connect(db_url)
 
+
+
 # Когда ты стучишься к аппке GET-запросом по адресу https://<аппка>/products
 # то вызывается функция, которая описана непосредственно под определением роута "@app.route('/products', methods=['GET'])" 
 # В нашем случае - get_products()
 # Так во фласке построена вся маршрутизация
+# --------------------------------------------------------------
 @app.route('/products', methods=['GET'])
 def get_products():
     # Получаем параметры запроса
@@ -97,6 +101,9 @@ def get_products():
     except Exception as e:
         return jsonify({"error": str(e)}), 500  # Ошибка сервера
 
+
+
+# --------------------------------------------------------------
 @app.route('/orders', methods=['POST'])
 def create_order():
     # Для POST-запроса параметры извлекаются немного по другому
@@ -215,6 +222,9 @@ def get_orders():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+# --------------------------------------------------------------
 @app.route("/languages")
 def get_languages():
     try:
@@ -242,6 +252,8 @@ def get_languages():
         return jsonify({"error": str(e)}), 500
 
 
+
+# --------------------------------------------------------------
 @app.route("/currencies")
 def get_currencies():
 
@@ -277,7 +289,43 @@ def get_currencies():
 
 
 
+# --------------------------------------------------------------
+@app.route("/categories")
+def get_categories():
 
+    lang = request.args.get('lang', 'ua')
+    if lang == '':
+        lang = 'ua'
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        #cur.execute("SELECT id, code, title FROM public.categories ORDER BY id;")
+        cur.execute("SELECT * FROM public.categories WHERE lang = '" + lang + "' ORDER BY id ASC;")
+        
+        rows = cur.fetchall()
+        row_count = cur.rowcount
+        cur.close()
+        conn.close()
+
+        datarows = [
+            {"id": row[0], "code": row[1].strip(), "title": row[2]}
+            for row in rows
+        ]
+        
+        data = {
+            "count"     :   row_count,
+            "categories" :   datarows
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+# --------------------------------------------------------------
 # Запуск приложения (локально или на хостинге)
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))  # Слушаем все IP, порт по умолчанию — 5000
