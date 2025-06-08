@@ -273,7 +273,7 @@ def get_currencies():
         conn.close()
 
         datarows = [
-            {"id": row[0], "code": row[1].strip(), "title": row[2]}
+            {"code": row[1].strip(), "title": row[2]}
             for row in rows
         ]
         
