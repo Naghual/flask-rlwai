@@ -300,8 +300,8 @@ def get_categories():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        #cur.execute("SELECT id, code, title FROM public.categories ORDER BY id;")
-        cur.execute("SELECT * FROM public.categories WHERE lang = '" + lang + "' ORDER BY id ASC;")
+        cur.execute("SELECT id, code, title FROM public.categories ORDER BY id;")
+        
         
         rows = cur.fetchall()
         row_count = cur.rowcount
