@@ -259,14 +259,15 @@ def get_languages():
 def get_currencies():
 
     lang = request.args.get('lang', 'ua')
-    if lang == '':
+    if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
+    
+    col_title = 'title_'+lang
     
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        #cur.execute("SELECT id, code, title FROM public.currencies ORDER BY id;")
-        cur.execute("SELECT * FROM public.currencies WHERE lang = '" + lang + "' ORDER BY id ASC;")
+        cur.execute("SELECT code, " +col_title+ " FROM public.currencies ORDER BY code;")
         
         rows = cur.fetchall()
         row_count = cur.rowcount
@@ -297,9 +298,6 @@ def get_categories():
     lang = request.args.get('lang', 'ua')
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
-        
-    #if lang == '':
-    #    lang = 'ua'
     
     col_title = 'title_'+lang
     
