@@ -72,7 +72,7 @@ def get_products():
             SELECT 
                 p.id AS product_id,
                 c.code AS category_code,
-                p."+col_title+" AS product_title,
+                p.""" + col_title + """ AS product_title,
                 pl.price,
                 pl.stock_quantity
             FROM products p
