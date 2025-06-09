@@ -33,6 +33,7 @@ def get_products():
     currency = request.args.get('curr', 'EUR')
     lang = request.args.get('lang', 'ua')
 
+    lang = lang.lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
 
@@ -261,6 +262,7 @@ def get_languages():
 def get_currencies():
 
     lang = request.args.get('lang', 'ua')
+    lang = lang.lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
     
@@ -298,6 +300,7 @@ def get_currencies():
 def get_categories():
 
     lang = request.args.get('lang', 'ua')
+    lang = lang.lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
     
