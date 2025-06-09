@@ -85,7 +85,7 @@ def get_products():
         #params = [currency, lang]
         params = [req_currency]
 
-        if category_id:
+        if req_category:
             sql += " AND c.code = %s"
             # И добавляешь в список параметров SQL-запроса
             params.append(req_category)
