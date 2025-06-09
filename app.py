@@ -96,7 +96,8 @@ def get_products():
         # При выполнении запроса либа проверит и подставит твои параметры запроса
         cur.execute(sql, params)
         rows = cur.fetchall()
-
+        rows_count = cur.rowcount
+        
         # Запихиваем результаты запроса в выходной массив
         products = []
         for row in rows:
@@ -119,7 +120,7 @@ def get_products():
 
         data = {
             "currency"  : req_currency,
-            "count"     : row_count,
+            "count"     : rows_count,
             "start"     : req_start,
             "limit"     : req_limit,
             "products"  : products 
@@ -273,7 +274,7 @@ def get_languages():
         #cur.execute("SELECT id, code, title FROM public.languages ORDER BY id;")
         cur.execute("SELECT code, title FROM public.languages ORDER BY id;")
         rows = cur.fetchall()
-        row_count = cur.rowcount
+        rows_count = cur.rowcount
         cur.close()
         conn.close()
 
@@ -284,7 +285,7 @@ def get_languages():
         #{"id": row[0], "code": row[1].strip(), "title": row[2]}
 
         data = {
-            "count"     :   row_count,
+            "count"     :   rows_count,
             "languages" :   datarows
         }
         
@@ -312,7 +313,7 @@ def get_currencies():
         cur.execute("SELECT code, " +col_title+ " FROM public.currencies ORDER BY code;")
         
         rows = cur.fetchall()
-        row_count = cur.rowcount
+        rows_count = cur.rowcount
         cur.close()
         conn.close()
 
@@ -322,8 +323,8 @@ def get_currencies():
         ]
         
         data = {
-            "count"     :   row_count,
-            "currencies" :   datarows
+            "count"     :   rows_count,
+            "currencies":   datarows
         }
         
         return jsonify(data), 200
@@ -350,7 +351,7 @@ def get_categories():
         cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
         
         rows = cur.fetchall()
-        row_count = cur.rowcount
+        rows_count = cur.rowcount
         cur.close()
         conn.close()
         
@@ -360,8 +361,8 @@ def get_categories():
         ]
         
         data = {
-            "count"     :   row_count,
-            "categories" :   datarows
+            "count"     :   rows_count,
+            "categories":   datarows
         }
         
         return jsonify(data), 200
