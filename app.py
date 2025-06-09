@@ -36,7 +36,7 @@ def get_products():
     req_category = request.args.get('category')
     
     req_currency = request.args.get('currency', 'eur')
-    req_currency = currency.lower()
+    req_currency = req_currency.lower()
     if req_currency == '':
         req_currency = 'eur'
         
