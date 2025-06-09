@@ -296,23 +296,19 @@ def get_categories():
     lang = request.args.get('lang', 'ua')
     if lang == '':
         lang = 'ua'
-
-    if lang == 'ua':
-        col_title = 'title'
-    else:
-        col_title = 'title_'+lang
-        
+    
+    col_title = 'title_'+lang
+    
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
         
-        
         rows = cur.fetchall()
         row_count = cur.rowcount
         cur.close()
         conn.close()
-
+        
         datarows = [
             {"id": row[0], "code": row[1].strip(), "title": row[2]}
             for row in rows
