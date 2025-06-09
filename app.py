@@ -231,16 +231,18 @@ def get_languages():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, code, title FROM public.languages ORDER BY id;")
+        #cur.execute("SELECT id, code, title FROM public.languages ORDER BY id;")
+        cur.execute("SELECT code, title FROM public.languages ORDER BY id;")
         rows = cur.fetchall()
         row_count = cur.rowcount
         cur.close()
         conn.close()
 
         datarows = [
-            {"id": row[0], "code": row[1].strip(), "title": row[2]}
+            {"code": row[0].strip(), "title": row[1]}
             for row in rows
         ]
+        #{"id": row[0], "code": row[1].strip(), "title": row[2]}
 
         data = {
             "count"     :   row_count,
@@ -275,7 +277,7 @@ def get_currencies():
         conn.close()
 
         datarows = [
-            {"code": row[1].strip(), "title": row[2]}
+            {"code": row[0].strip(), "title": row[1]}
             for row in rows
         ]
         
@@ -312,7 +314,7 @@ def get_categories():
         conn.close()
         
         datarows = [
-            {"id": row[0], "code": row[1].strip(), "title": row[2]}
+            {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": 0}
             for row in rows
         ]
         
