@@ -117,7 +117,7 @@ def get_products():
         conn.close()
 
 
-          data = {
+        data = {
             "currency"  : req_currency,
             "count"     : row_count,
             "start"     : req_start,
