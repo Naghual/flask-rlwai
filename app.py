@@ -29,43 +29,69 @@ def get_products():
     # Получаем параметры запроса
     # это именно GET-параметры - request.args.get(param name)
     # как работать с POST описал в комментах в create_order()
-    category_id = request.args.get('ctg_id')
-    currency = request.args.get('curr', 'EUR')
-    lang = request.args.get('lang', 'ua')
 
-    lang = lang.lower()
-    if lang not in ['ua', 'pl', 'en', 'ru']:
-        lang = 'ua'
+    req_start = request.args.get('start')
+    req_limit = request.args.get('limit')
 
+    req_category = request.args.get('category')
+    
+    req_currency = request.args.get('currency', 'eur')
+    req_currency = currency.lower()
+    if req_currency == '':
+        req_currency = 'eur'
+        
+    req_lang = request.args.get('lang', 'ua')
+    req_lang = lang.lower()
+    if req_lang not in ['ua', 'pl', 'en', 'ru']:
+        req_lang = 'ua'
+    
+    col_title = 'title_' + req_lang
+
+    
     try:
         # Запрос к БД
         conn = get_db_connection()
         cur = conn.cursor()
 
+        #sql = """
+        #    SELECT 
+        #        p.id AS product_id,
+        #        pn.name AS product_name,
+        #        c.name AS category_name,
+        #        pl.price,
+        #        pl.stock_quantity,
+        #        pl.currency_id
+        #    FROM products p
+        #    INNER JOIN product_names pn ON p.id = pn.product_id
+        #    INNER JOIN categories c ON p.category_id = c.id
+        #    INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_id = %s
+        #    WHERE pn.lang_id = %s
+        #"""
+
         sql = """
             SELECT 
                 p.id AS product_id,
-                pn.name AS product_name,
-                c.name AS category_name,
+                c.code AS category_code,
+                p."+col_title+" AS product_title,
                 pl.price,
-                pl.stock_quantity,
-                pl.currency_id
+                pl.stock_quantity
             FROM products p
-            INNER JOIN product_names pn ON p.id = pn.product_id
             INNER JOIN categories c ON p.category_id = c.id
-            INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_id = %s
-            WHERE pn.lang_id = %s
+            INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s
         """
+        
         # Это параметризирванные запросы, защита от инъекций в SQL
         # В тексте SQL ставишь параметры типа %s и кодом "params = [currency, lang]" запихиваешь их в список
-        params = [currency, lang]
+        #params = [currency, lang]
+        params = [req_currency]
 
         if category_id:
-            sql += " AND c.id = %s"
+            sql += " AND c.code = %s"
             # И добавляешь в список параметров SQL-запроса
-            params.append(category_id)
+            params.append(req_category)
 
-        sql += " ORDER BY c.name, p.id"
+        #sql += " ORDER BY c.name, p.id"
+        sql += " ORDER BY c.code, p."+col_title
 
         # При выполнении запроса либа проверит и подставит твои параметры запроса
         cur.execute(sql, params)
@@ -75,13 +101,24 @@ def get_products():
         products = []
         for row in rows:
             products.append({
-                'product_id': row[0],
-                'product_name': row[1],
-                'category_name': row[2],
-                'price': float(row[3]),
-                'stock_quantity': row[4],
-                'currency_id': row[5]
+                'id': row[0],
+                'category': row[1],
+                'title': row[2],
+                'description': '',
+                'image': '',
+                'measure': '',
+                'quantity': row[4],
+                'price': float(row[3])
             })
+        
+        
+        data = {
+            "currency"  : req_currency,
+            "count"     : row_count,
+            "start"     : req_start,
+            "limit"     : req_limit,
+            "products"  : products 
+        }
 
         # Дисконнект к БД
         cur.close()
