@@ -32,7 +32,8 @@ def get_products():
     category_id = request.args.get('ctg_id')
     currency = request.args.get('curr', 'EUR')
     lang = request.args.get('lang', 'ua')
-    if lang not in ['ua', 'en']:
+
+    if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
 
     try:
@@ -294,8 +295,11 @@ def get_currencies():
 def get_categories():
 
     lang = request.args.get('lang', 'ua')
-    if lang == '':
+    if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
+        
+    #if lang == '':
+    #    lang = 'ua'
     
     col_title = 'title_'+lang
     
