@@ -41,7 +41,7 @@ def get_products():
         req_currency = 'eur'
         
     req_lang = request.args.get('lang', 'ua')
-    req_lang = lang.lower()
+    req_lang = req_lang.lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
     
