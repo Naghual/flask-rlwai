@@ -111,19 +111,20 @@ def get_products():
                 'price': float(row[3])
             })
         
-        
-        data = {
+
+        # Дисконнект к БД
+        cur.close()
+        conn.close()
+
+
+          data = {
             "currency"  : req_currency,
             "count"     : row_count,
             "start"     : req_start,
             "limit"     : req_limit,
             "products"  : products 
         }
-
-        # Дисконнект к БД
-        cur.close()
-        conn.close()
-
+        
         # Из массивов python делает массив JSON
         # Если тебе нужно отдать ответ в виде {...}, то перед jsonify() можешь запихать его в структуру типа 
         # response = {
@@ -133,7 +134,7 @@ def get_products():
         # return jsonify(response), 200
 
         if products:
-            return jsonify(products), 200
+            return jsonify(data), 200
         else:
             return jsonify({"message": "No products found"})
 
