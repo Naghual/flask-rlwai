@@ -30,7 +30,6 @@ def get_db_connection():
 
 
 
-
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -43,7 +42,9 @@ def login():
     token = secrets.token_hex(16)
     TOKENS[token] = (phone, time.time() + TOKEN_TTL)
 
-    return jsonify({"token": token})0
+    return jsonify({"token": token})
+
+
 
 
 
