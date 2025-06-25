@@ -43,7 +43,7 @@ def login():
     token = secrets.token_hex(16)
     TOKENS[token] = (phone, time.time() + TOKEN_TTL)
 
-    return jsonify({"token": token})
+    return jsonify({"token": token})0
 
 
 
