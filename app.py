@@ -1,9 +1,11 @@
 import os
 import psycopg2    # PostgreSQL
-from flask import Flask, jsonify, request
 import secrets
 import time
+from flask import Flask, jsonify, request
+from functools import wraps
 from dotenv import load_dotenv    # Для загрузки переменных окружения из .env файла
+
 
 # Если приложение запущено локально, а не в Railway — загружаем переменные из .env
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
@@ -12,12 +14,56 @@ if os.environ.get("RAILWAY_ENVIRONMENT") is None:
 app = Flask(__name__)
 
 
-# Простая "база" пользователей
-USERS = {"admin": "1234"}
 
-# Токены: token -> (username, expiry)
-TOKENS = {}
+# --------------------------------------------------------------
+# 🔐 Простая база пользователей и токены
+USERS = {"admin": "1234"}
+TOKENS = {}  # token -> (username, expiry)
 TOKEN_TTL = 300  # 5 минут
+
+
+# --------------------------------------------------------------
+# 🔐 Декоратор авторизации
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        if not auth.startswith('Bearer '):
+            return jsonify({"error": "Authorization header missing"}), 401
+
+        token = auth.split(' ')[1]
+        user_data = TOKENS.get(token)
+
+        if not user_data:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        username, expiry = user_data
+        if time.time() > expiry:
+            del TOKENS[token]
+            return jsonify({"error": "Token expired"}), 401
+
+        request.user = username
+        return f(*args, **kwargs)
+    return decorated
+
+	
+# --------------------------------------------------------------
+# 🔐 Точка входа для получения токена
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    if USERS.get(username) != password:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    token = secrets.token_hex(16)
+    TOKENS[token] = (username, time.time() + TOKEN_TTL)
+
+    return jsonify({"token": token})
+
+
 
 
 # --------------------------------------------------------------
@@ -30,43 +76,8 @@ def get_db_connection():
 
 
 
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.json
-    phone = data.get("phone")
-    password = data.get("password")
-
-    if USERS.get(phone) != password:
-        return jsonify({"error": "Invalid credentials"}), 401
-
-    token = secrets.token_hex(16)
-    TOKENS[token] = (phone, time.time() + TOKEN_TTL)
-
-    return jsonify({"token": token})
 
 
-
-
-
-@app.route('/protected', methods=['GET'])
-def protected():
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({"error": "Authorization header missing"}), 401
-
-    token = auth.split(' ')[1]
-    user_data = TOKENS.get(token)
-
-    if not user_data:
-        return jsonify({"error": "Invalid or expired token"}), 401
-
-    username, expiry = user_data
-    if time.time() > expiry:
-        del TOKENS[token]
-        return jsonify({"error": "Token expired"}), 401
-
-    return jsonify({"message": f"Hello, {username}! Access granted."}), 200
-     
 
 
 
@@ -77,6 +88,7 @@ def protected():
 # Так во фласке построена вся маршрутизация
 # --------------------------------------------------------------
 @app.route('/products', methods=['GET'])
+@require_auth
 def get_products():
     # Получаем параметры запроса
     # это именно GET-параметры - request.args.get(param name)
@@ -198,6 +210,7 @@ def get_products():
 
 # --------------------------------------------------------------
 @app.route('/orders', methods=['POST'])
+@require_auth
 def create_order():
     # Для POST-запроса параметры извлекаются немного по другому
     
@@ -263,6 +276,7 @@ def create_order():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/orders', methods=['GET'])
+@require_auth
 def get_orders():
     try:
         conn = get_db_connection()
@@ -319,6 +333,7 @@ def get_orders():
 
 # --------------------------------------------------------------
 @app.route("/languages")
+@require_auth
 def get_languages():
     try:
         conn = get_db_connection()
