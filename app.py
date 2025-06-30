@@ -52,12 +52,12 @@ def require_auth(f):
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    username = data.get("username")
-    password = data.get("password")
+    user_name = data.get("username")
+    user_pass = data.get("password")
 
-    if USERS.get(username) != password:
+    if USERS.get(user_name) != user_pass:
         return jsonify({"error": "Invalid credentials"}), 401
-
+    
     token = secrets.token_hex(16)
     TOKENS[token] = (username, time.time() + TOKEN_TTL)
 
