@@ -51,17 +51,17 @@ def require_auth(f):
 # 🔐 Точка входа для получения токена
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    user_name = data.get("username")
-    user_pass = data.get("password")
-
-    if USERS.get(user_name) != user_pass:
-        return jsonify({"error": "Invalid credentials"}), 401
+	data = request.json
+	user_name = data.get("username")
+	user_pass = data.get("password")
+	
+    if USERS.get(user_name) != user_pass: 
+		return jsonify({"error": "Invalid credentials"}), 401
     
-    token = secrets.token_hex(16)
-    TOKENS[token] = (user_name, time.time() + TOKEN_TTL)
-
-    return jsonify({"token": token})
+	token = secrets.token_hex(16)
+	TOKENS[token] = (user_name, time.time() + TOKEN_TTL)
+	
+	return jsonify({"token": token})
 
 
 
