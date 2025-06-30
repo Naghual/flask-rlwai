@@ -51,9 +51,15 @@ def require_auth(f):
 # 🔐 Точка входа для получения токена
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+
     username = data.get("username")
     password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
 
     if USERS.get(username) != password:
         return jsonify({"error": "Invalid credentials"}), 401
@@ -62,6 +68,19 @@ def login():
     TOKENS[token] = (username, time.time() + TOKEN_TTL)
 
     return jsonify({"token": token})
+	
+#def login():
+#    data = request.json
+#    username = data.get("username")
+#    password = data.get("password")
+#
+#    if USERS.get(username) != password:
+#        return jsonify({"error": "Invalid credentials"}), 401
+#
+#    token = secrets.token_hex(16)
+#    TOKENS[token] = (username, time.time() + TOKEN_TTL)
+#
+#    return jsonify({"token": token})
 
 
 
