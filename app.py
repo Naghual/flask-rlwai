@@ -59,7 +59,7 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
     
     token = secrets.token_hex(16)
-    TOKENS[token] = (username, time.time() + TOKEN_TTL)
+    TOKENS[token] = (user_name, time.time() + TOKEN_TTL)
 
     return jsonify({"token": token})
 
