@@ -175,9 +175,9 @@ def get_products():
             params.append(req_category)
             
             if isinstance(req_category, str) == True:
-                sql += "    WHERE c.name = %s"
-            else:
                 sql += "    WHERE c.code = %s"
+            else:
+                sql += "    WHERE c.id = %s"
             
         
         sql += "    ORDER BY c.code, p."+col_title
