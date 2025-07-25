@@ -156,7 +156,7 @@ def get_products():
         sql = """
     SELECT 
         p.id AS product_id,
-        c.""" + col_title + """ AS category_name,
+        c.code AS category_name,
         p.""" + col_title + """ AS product_title,
         pl.price,
         pl.stock_quantity
