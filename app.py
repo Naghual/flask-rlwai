@@ -117,7 +117,9 @@ def get_products():
     req_limit = request.args.get('limit')
 
     req_category = request.args.get('category')
+    category_type = type(req_category)
     
+        
     req_currency = request.args.get('currency', 'eur')
     req_currency = req_currency.lower()
     if req_currency == '':
@@ -152,15 +154,15 @@ def get_products():
         #"""
 
         sql = """
-            SELECT 
-                p.id AS product_id,
-                c.code AS category_code,
-                p.""" + col_title + """ AS product_title,
-                pl.price,
-                pl.stock_quantity
-            FROM products p
-            INNER JOIN categories c ON p.category_id = c.id
-            INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s
+    SELECT 
+        p.id AS product_id,
+        c.name AS category_name,
+        p.""" + col_title + """ AS product_title,
+        pl.price,
+        pl.stock_quantity
+    FROM products p
+    INNER JOIN categories c ON p.category_id = c.id
+    INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s
         """
         
         # Это параметризирванные запросы, защита от инъекций в SQL
@@ -169,13 +171,18 @@ def get_products():
         params = [req_currency]
 
         if req_category:
-            sql += " AND c.code = %s"
             # И добавляешь в список параметров SQL-запроса
             params.append(req_category)
+            
+            if isinstance(req_category, str) == True:
+                sql += "    WHERE c.name = %s"
+            else:
+                sql += "    WHERE c.code = %s"
+            
+        
+        sql += "    ORDER BY c.code, p."+col_title
 
-        #sql += " ORDER BY c.name, p.id"
-        sql += " ORDER BY c.code, p."+col_title
-
+	    
         # При выполнении запроса либа проверит и подставит твои параметры запроса
         cur.execute(sql, params)
         rows = cur.fetchall()
