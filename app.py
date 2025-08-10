@@ -284,7 +284,7 @@ def get_product(product_id):
         conn.close()
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+        return jsonify({"error (1): ": str(e)}), 500  # Ошибка сервера
     
         
     # має бути лише один!
@@ -318,7 +318,7 @@ def get_product(product_id):
         conn.close()
     
     except Exception as e:
-        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+        return jsonify({"error (2): ": str(e)}), 500  # Ошибка сервера
     
     
     
@@ -350,7 +350,7 @@ def get_product(product_id):
         
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+        return jsonify({"error (3): ": str(e)}), 500  # Ошибка сервера
     
 
 
