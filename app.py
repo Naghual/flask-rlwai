@@ -428,7 +428,21 @@ def get_categories():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
+        #cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
+        cur.execute("""
+SELECT 
+	c.id, 
+	c.code, 
+	c.""" + col_title + """, 
+	COUNT(p.id) as ProductCount
+FROM 
+    Categories c
+LEFT JOIN 
+    Products p ON c.id = p.category_id
+GROUP BY 
+    c.id, c.title_ru 
+ORDER BY c.id;""")
+
         
         rows = cur.fetchall()
         rows_count = cur.rowcount
@@ -436,7 +450,7 @@ def get_categories():
         conn.close()
         
         datarows = [
-            {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": 0}
+            {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": row[3]}
             for row in rows
         ]
         
