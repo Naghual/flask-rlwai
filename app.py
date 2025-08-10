@@ -306,10 +306,10 @@ def get_product(product_id):
     select 
     	i.img_data 
     from images i
-    where i.product_id ="""+product_id+"""
+    where i.product_id = %s
     order by i.id"""
         
-        cur.execute(sql)
+        cur.execute(sql, (product_id,))
         img_rows = cur.fetchall()
         #img_count = cur.rowcount
         
