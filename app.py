@@ -229,7 +229,7 @@ def get_products():
 def get_product():
     
     # перевірка на заповненність АйДи товару
-    product_id = request.args.get('product_id', 0)
+    #product_id = request.args.get('product_id', 0)
     if product_id == 0:
         return jsonify({"message": "No product ID specified"}), 400
 
