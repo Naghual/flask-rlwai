@@ -333,16 +333,16 @@ def get_product(product_id):
         # Заносимо данні
         first_row = rows[0]
         data = {
-            "id"            : first_row['id'],
-            "category_id"   : first_row['category_id'],
-            "category"      : first_row['category'],
-            "active"        : first_row['active'],
-            "title"         : first_row['title'],
-            "description"   : first_row['description'],
-            "image"         : first_row['img_data'],
-            "quantity"      : first_row['stock_quantity'],
-            "price"         : first_row['price'],
-            "images"    : images 
+            "id"            : first_row[0],
+            "category_id"   : first_row[1],
+            "category"      : first_row[2],
+            "active"        : first_row[3],
+            "title"         : first_row[4],
+            "description"   : first_row[5],
+            "image"         : first_row[9],
+            "quantity"      : first_row[8],
+            "price"         : first_row[7],
+            "images"        : images 
         }
         
         
