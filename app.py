@@ -88,7 +88,7 @@ def get_db_connection():
 
 # ==============================================================
 # --------------------------------------------------------------
-# 📦 Запит товару
+# 📦 Запит списку товарів
 # Когда ты стучишься к аппке GET-запросом по адресу https://<аппка>/products
 # то вызывается функция, которая описана непосредственно под определением роута "@app.route('/products', methods=['GET'])" 
 # В нашем случае - get_products()
@@ -221,6 +221,142 @@ def get_products():
 
 
 
+
+# --------------------------------------------------------------
+# 📦 Запит конкретного товару
+@app.route('/products/<int:product_id>', methods=['GET'])
+@require_auth
+def get_product():
+    
+    # перевірка на заповненність АйДи товару
+    product_id = request.args.get('product_id', 0)
+    if product_id == 0:
+        return jsonify({"message": "No product ID specified"}), 400
+
+    # бажана валюта, або євро
+    req_currency = request.args.get('currency', 'eur')
+    req_currency = req_currency.lower()
+    if req_currency == '':
+        req_currency = 'eur'
+    
+    # бажана мова, або Українська
+    req_lang = request.args.get('lang', 'ua')
+    req_lang = req_lang.lower()
+    if req_lang not in ['ua', 'pl', 'en', 'ru']:
+        req_lang = 'ua'
+    # відповідна назва колонок
+    col_title = 'title_' + req_lang
+    col_descr = 'descr_' + req_lang
+    
+    
+    
+    # 1
+    # отримаємо данні про товар
+    try:
+        # Запит до БД
+        conn = get_db_connection()
+        cur = conn.cursor()
+        sql = """
+    select 
+        p.id,
+    	p.category_id,
+    	c.code AS category,
+    	p.is_active as active,
+    	p."""+col_title+""" as title,
+    	p."""+col_descr+""" as description,
+        p.updated_at,
+    	pl.price,
+    	pl.stock_quantity,
+    	i.img_data
+    from Products p
+    inner join categories c ON p.category_id = c.id
+    inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '"""+req_currency+"""'
+    left join images i ON i.product_id = p.id
+    where p.id = """ +product_id
+        
+        
+        cur.execute(sql)
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        
+        # Дисконнект від БД
+        cur.close()
+        conn.close()
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+    
+        
+    # має бути лише один!
+    if rows_count == 0:
+        return jsonify({"no records found"}), 500  # Ошибка сервера
+
+    if rows_count != 1:
+        return jsonify({"records more than expected"}), 500  # Ошибка сервера
+        
+    
+    
+    # 2
+    # отримаємо зображення товару
+    try:
+        # Запит до БД
+        conn = get_db_connection()
+        cur = conn.cursor()
+        sql = """
+    select 
+    	i.img_data 
+    from images i
+    where i.product_id ="""+product_id+"""
+    order by i.id"""
+        
+        cur.execute(sql)
+        img_rows = cur.fetchall()
+        #img_count = cur.rowcount
+        
+        # Дисконнект від БД
+        cur.close()
+        conn.close()
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+    
+    
+    
+    try:    
+
+        # Заносимо зображення у масив
+        images = []
+        for row in img_rows:
+            images.append({'image': row[0]})
+        
+        
+        # Заносимо данні
+        first_row = rows[0]
+        data = {
+            "id"            : first_row['id'],
+            "category_id"   : first_row['category_id'],
+            "category"      : first_row['category'],
+            "active"        : first_row['active'],
+            "title"         : first_row['title'],
+            "description"   : first_row['description'],
+            "image"         : first_row['img_data'],
+            "quantity"      : first_row['stock_quantity'],
+            "price"         : first_row['price'],
+            "images"    : images 
+        }
+        
+        
+        return jsonify(data), 200
+        
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+    
+
+
+    
+    
+# ==============================================================
 # --------------------------------------------------------------
 @app.route('/orders', methods=['POST'])
 @require_auth
