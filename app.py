@@ -226,7 +226,7 @@ def get_products():
 # 📦 Запит конкретного товару
 @app.route('/products/<int:product_id>', methods=['GET'])
 @require_auth
-def get_product():
+def get_product(product_id):
     
     # перевірка на заповненність АйДи товару
     #product_id = request.args.get('product_id', 0)
