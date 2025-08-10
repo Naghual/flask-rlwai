@@ -272,10 +272,10 @@ def get_product(product_id):
     inner join categories c ON p.category_id = c.id
     inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '"""+req_currency+"""'
     left join images i ON i.product_id = p.id
-    where p.id = """ +product_id
+    where p.id = %s"""
         
         
-        cur.execute(sql)
+        cur.execute(sql, (product_id,))
         rows = cur.fetchall()
         rows_count = cur.rowcount
         
