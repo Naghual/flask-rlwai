@@ -487,8 +487,7 @@ def get_languages():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        #cur.execute("SELECT id, code, title FROM public.languages ORDER BY id;")
-        cur.execute("SELECT code, title FROM public.languages ORDER BY id;")
+        cur.execute("SELECT code, title FROM public.languages ORDER BY title;")
         rows = cur.fetchall()
         rows_count = cur.rowcount
         cur.close()
@@ -498,7 +497,6 @@ def get_languages():
             {"code": row[0].strip(), "title": row[1]}
             for row in rows
         ]
-        #{"id": row[0], "code": row[1].strip(), "title": row[2]}
 
         data = {
             "count"     :   rows_count,
