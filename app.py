@@ -2,6 +2,7 @@ import os
 import psycopg2    # PostgreSQL
 import secrets
 import time
+import bcrypt
 from flask import Flask, jsonify, request
 from functools import wraps
 from dotenv import load_dotenv    # Для загрузки переменных окружения из .env файла
@@ -24,8 +25,10 @@ TOKENS = {}  # token -> (username, expiry)
 TOKEN_TTL = 172800  # 48 годин
 
 
+
 # --------------------------------------------------------------
 # 🔐 Декоратор авторизації
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -48,10 +51,12 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-	
+
+
 # --------------------------------------------------------------
 # 🔐 Точка входу для отримання токену
 @app.route('/login', methods=['POST'])
+
 def login():
     data = request.get_json()
     if not data:
@@ -71,12 +76,14 @@ def login():
 
     return jsonify({"token": token})
 
-	
+
+
 
 
 # ==============================================================
 # --------------------------------------------------------------
 # 💾 Функція підключення до БД, викликається з кожного маршруту, де потрібно звертатися до бази
+
 def get_db_connection():
     db_url = os.getenv("DATABASE_URL")   # Читаем URL базы из переменной окружения
     if not db_url:
@@ -95,6 +102,7 @@ def get_db_connection():
 # Так во фласке построена вся маршрутизация
 @app.route('/products', methods=['GET'])
 @require_auth
+
 def get_products():
     # Получаем параметры запроса
     # это именно GET-параметры - request.args.get(param name)
@@ -104,13 +112,13 @@ def get_products():
     req_limit = request.args.get('limit')
 
     req_category = request.args.get('category')
-    category_type = type(req_category)
+    #category_type = type(req_category)
     
         
-    req_currency = request.args.get('currency', 'eur')
+    req_currency = request.args.get('currency', 'uah')
     req_currency = req_currency.lower()
     if req_currency == '':
-        req_currency = 'eur'
+        req_currency = 'uah'
         
     req_lang = request.args.get('lang', 'ua')
     req_lang = req_lang.lower()
@@ -118,45 +126,29 @@ def get_products():
         req_lang = 'ua'
     
     col_title = 'title_' + req_lang
-
+    
     
     try:
         # Запрос к БД
         conn = get_db_connection()
         cur = conn.cursor()
-
-        #sql = """
-        #    SELECT 
-        #        p.id AS product_id,
-        #        pn.name AS product_name,
-        #        c.name AS category_name,
-        #        pl.price,
-        #        pl.stock_quantity,
-        #        pl.currency_id
-        #    FROM products p
-        #    INNER JOIN product_names pn ON p.id = pn.product_id
-        #    INNER JOIN categories c ON p.category_id = c.id
-        #    INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_id = %s
-        #    WHERE pn.lang_id = %s
-        #"""
-
+        
         sql = """
-    SELECT 
-        p.id AS product_id,
-        c.code AS category_name,
-        p.""" + col_title + """ AS product_title,
-        pl.price,
-        pl.stock_quantity
-    FROM products p
-    INNER JOIN categories c ON p.category_id = c.id
-    INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s
-        """
+            SELECT 
+                p.id AS product_id,
+                c.code AS category_name,
+                p.""" + col_title + """ AS product_title,
+                pl.price,
+                pl.stock_quantity
+            FROM products p
+            INNER JOIN categories c ON p.category_id = c.id
+            INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s"""
         
         # Это параметризирванные запросы, защита от инъекций в SQL
         # В тексте SQL ставишь параметры типа %s и кодом "params = [currency, lang]" запихиваешь их в список
         #params = [currency, lang]
         params = [req_currency]
-
+        
         if req_category:
             # И добавляешь в список параметров SQL-запроса
             params.append(req_category)
@@ -165,11 +157,10 @@ def get_products():
                 sql += "    WHERE c.code = %s"
             else:
                 sql += "    WHERE c.id = %s"
-            
         
         sql += "    ORDER BY c.code, p."+col_title
-
-	    
+        
+        
         # При выполнении запроса либа проверит и подставит твои параметры запроса
         cur.execute(sql, params)
         rows = cur.fetchall()
@@ -189,12 +180,12 @@ def get_products():
                 'price': float(row[3])
             })
         
-
+        
         # Дисконнект к БД
         cur.close()
         conn.close()
-
-
+        
+        
         data = {
             "currency"  : req_currency,
             "count"     : rows_count,
@@ -213,9 +204,10 @@ def get_products():
 
         if products:
             return jsonify(data), 200
-        else:
-            return jsonify({"message": "No products found"})
-
+        
+        return jsonify({"message": "No products found"})
+        
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500  # Ошибка сервера
 
@@ -226,18 +218,19 @@ def get_products():
 # 📦 Запит конкретного товару
 @app.route('/products/<int:product_id>', methods=['GET'])
 @require_auth
+
 def get_product(product_id):
     
     # перевірка на заповненність АйДи товару
     #product_id = request.args.get('product_id', 0)
     if product_id == 0:
         return jsonify({"message": "No product ID specified"}), 400
-
+    
     # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'eur')
+    req_currency = request.args.get('currency', 'uah')
     req_currency = req_currency.lower()
     if req_currency == '':
-        req_currency = 'eur'
+        req_currency = 'uah'
     
     # бажана мова, або Українська
     req_lang = request.args.get('lang', 'ua')
@@ -257,22 +250,22 @@ def get_product(product_id):
         conn = get_db_connection()
         cur = conn.cursor()
         sql = """
-    select 
-        p.id,
-    	p.category_id,
-    	c.code AS category,
-    	p.is_active as active,
-    	p."""+col_title+""" as title,
-    	p."""+col_descr+""" as description,
-        p.updated_at,
-    	pl.price,
-    	pl.stock_quantity,
-    	i.img_data
-    from Products p
-    inner join categories c ON p.category_id = c.id
-    inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '"""+req_currency+"""'
-    left join images i ON i.product_id = p.id
-    where p.id = %s"""
+            select 
+                p.id,
+                p.category_id,
+                c.code AS category,
+                s_active as active,
+                p."""+col_title+""" as title,
+                p."""+col_descr+""" as description,
+                p.updated_at,
+                pl.price,
+                pl.stock_quantity,
+                i.img_data
+            from Products p
+            inner join categories c ON p.category_id = c.id
+            inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '"""+req_currency+"""'
+            left join images i ON i.product_id = p.id
+            where p.id = %s"""
         
         
         cur.execute(sql, (product_id,))
@@ -286,14 +279,14 @@ def get_product(product_id):
     except Exception as e:
         return jsonify({"error (1): ": str(e)}), 500  # Ошибка сервера
     
-        
+    
     # має бути лише один!
     if rows_count == 0:
         return jsonify({"no records found"}), 500  # Ошибка сервера
-
+    
     if rows_count != 1:
         return jsonify({"records more than expected"}), 500  # Ошибка сервера
-        
+    
     
     
     # 2
@@ -303,11 +296,11 @@ def get_product(product_id):
         conn = get_db_connection()
         cur = conn.cursor()
         sql = """
-    select 
-    	i.img_data 
-    from images i
-    where i.product_id = %s
-    order by i.id"""
+            select 
+                i.img_data 
+            from images i
+            where i.product_id = %s
+            order by i.id"""
         
         cur.execute(sql, (product_id,))
         img_rows = cur.fetchall()
@@ -322,8 +315,8 @@ def get_product(product_id):
     
     
     
-    try:    
-
+    try:
+        
         # Заносимо зображення у масив
         images = []
         for row in img_rows:
@@ -348,18 +341,19 @@ def get_product(product_id):
         
         return jsonify(data), 200
         
-
+        
     except Exception as e:
         return jsonify({"error (3): ": str(e)}), 500  # Ошибка сервера
     
-
-
+    
+    
     
     
 # ==============================================================
 # --------------------------------------------------------------
 @app.route('/orders', methods=['POST'])
 @require_auth
+
 def create_order():
     # Для POST-запроса параметры извлекаются немного по другому
     
@@ -369,7 +363,7 @@ def create_order():
     #   <input name="password">
     # </form>
     # то получаем их через методы типа username = request.form.get('username')
-
+    
     # 2. Если в теле запроса прислали JSON, как это делают в REST-запросах (это наш случай), типа
     # Content-Type: application/json:    
     # {
@@ -379,7 +373,7 @@ def create_order():
     # , то используем data = request.get_json(), он отдает массив и обращается к нему дальше в коде 
     # так - data['username']
     # или так - data.get('username')
-
+    
     data = request.get_json()
     
     if not data or 'customer_id' not in data or 'items' not in data:
@@ -387,10 +381,10 @@ def create_order():
     
     customer_id = data['customer_id']
     items = data['items']
-
+    
     if not items or not isinstance(items, list):
         return jsonify({"error": "Items list is required"}), 400  # Проверка структуры
-
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -406,7 +400,7 @@ def create_order():
             product_id = item.get('product_id')
             quantity = item.get('quantity')
             price = item.get('price')
-
+            
             if not all([product_id, quantity, price]):
                 continue  # Пропускаем неполные строки
 
@@ -414,18 +408,22 @@ def create_order():
                 "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
                 (order_id, product_id, quantity, price)
             )
-
+            
         conn.commit()  # Сохраняем изменения
         cursor.close()
         conn.close()
-
+        
         return jsonify({"message": "Order created successfully", "order_id": order_id}), 201
-
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+
 @app.route('/orders', methods=['GET'])
 @require_auth
+
 def get_orders():
     try:
         conn = get_db_connection()
@@ -471,18 +469,22 @@ def get_orders():
             cursor.close()
             conn.close()
             return jsonify({"orders": orders_list}), 200
-        else:
-            cursor.close()
-            conn.close()
-            return jsonify({"message": "No orders found"}), 404
+        
+        
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "No orders found"}), 404
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
 # --------------------------------------------------------------
 @app.route("/languages")
 @require_auth
+
 def get_languages():
     try:
         conn = get_db_connection()
@@ -510,8 +512,11 @@ def get_languages():
 
 
 
+
 # --------------------------------------------------------------
 @app.route("/currencies")
+@require_auth
+
 def get_currencies():
 
     lang = request.args.get('lang', 'ua')
@@ -553,6 +558,8 @@ def get_currencies():
 # --------------------------------------------------------------
 # 📗 Запит товарних категорій
 @app.route("/categories")
+@require_auth
+
 def get_categories():
 
     lang = request.args.get('lang', 'ua')
@@ -567,18 +574,18 @@ def get_categories():
         cur = conn.cursor()
         #cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
         cur.execute("""
-SELECT 
-	c.id, 
-	c.code, 
-	c.""" + col_title + """, 
-	COUNT(p.id) as ProductCount
-FROM 
-    Categories c
-LEFT JOIN 
-    Products p ON c.id = p.category_id
-GROUP BY 
-    c.id, c.title_ru 
-ORDER BY c.id;""")
+            SELECT 
+            	c.id, 
+            	c.code, 
+            	c.""" + col_title + """, 
+            	COUNT(p.id) as ProductCount
+            FROM 
+                Categories c
+            LEFT JOIN 
+                Products p ON c.id = p.category_id
+            GROUP BY 
+                c.id, c.title_ru 
+            ORDER BY c.id;""")
 
         
         rows = cur.fetchall()
@@ -606,9 +613,122 @@ ORDER BY c.id;""")
 
 # ==============================================================
 # --------------------------------------------------------------
+# 🛒 Запит кошика
+@app.route("/cart")
+@require_auth
+
+def get_cart():
+    
+    # бажана мова, або Українська
+    req_lang = request.args.get('lang', 'ua')
+    req_lang = req_lang.lower()
+    if req_lang not in ['ua', 'pl', 'en', 'ru']:
+        req_lang = 'ua'
+        
+    # бажана валюта, або євро
+    req_currency = request.args.get('currency', 'uah')
+    req_currency = req_currency.lower()
+    if req_currency == '':
+        req_currency = 'uah'
+    
+    
+    # відповідна назва колонок
+    col_title = 'title_' + req_lang
+    col_descr = 'descr_' + req_lang
+    
+    
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        #cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
+        
+        sql = """
+            select 
+                c.id,
+                c.customer_id,
+                c.product_id,
+                pr.category_id,
+                cat.code,
+                pr."""+col_title+""" as title,
+                pr."""+col_descr+""" as description,
+                i.img_data,
+                c.quantity,
+                pl.price,
+                c.quantity * pl.price as summ 
+            from carts c 
+            inner join products pr ON pr.id = c.product_id
+            inner join price_list pl ON pl.product_id = c.product_id AND pl.currency_code = '"""+req_currency+"""'
+            inner join categories cat ON cat.id = pr.category_id
+            left join images i ON i.product_id = c.product_id
+            where c.customer_id = 11"""
+        
+        cur.execute(sql)
+        
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        # Приклад структури що повертаємо:
+        # {
+        #     "count"   : 1,
+        #     "total"   : 2.5,
+        #     "products": [
+        #         {
+        #             "id"          : 719,
+        #             "category"    : "cat_profile",
+        #             "title"       : "Профіль для 2-х рівневої стелі під 45° 2,5 м",
+        #             "image"       : "storage\images\719-1.jpg",
+        #             "measure"     : "шт.",
+        #             "quantity"    : 1,
+        #             "price"       : 2.5
+        #             "summ"        : 2.5
+                    
+        #         }
+        #     ]
+        # }
+        
+        
+        total_summ = 0
+        
+        for row in rows:
+            
+            productsdata = [
+                {"id"       : row[2],
+                 "category" : row[4].strip(),
+                 "title"    : row[5].strip(),
+                 "image"    : row[7],
+                 "measure"  : "шт.",
+                 "quantity" : row[8],
+                 "price"    : row[9],
+                 "summ"     : row[10]
+                }
+            ]
+            
+            total_summ = total_summ + row[10]
+        
+        
+        data = {
+            "count"     :   rows_count,
+            "total"     :   total_summ,
+            "products"  :   productsdata
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+# ==============================================================
+# --------------------------------------------------------------
 # Запуск приложения (локально или на хостинге)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))  # Слушаем все IP, порт по умолчанию — 5000
+
 
 # Дополнительные файлы в проекте:
 
