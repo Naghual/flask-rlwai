@@ -691,10 +691,11 @@ def get_cart():
         
         
         total_summ = 0
+        productsdata = []
         
         for row in rows:
             
-            productsdata = [
+            productsdata.append(
                 {"id"       : row[2],
                  "category" : row[4],
                  "title"    : row[5],
@@ -704,7 +705,7 @@ def get_cart():
                  "price"    : row[9],
                  "summ"     : row[10]
                 }
-            ]
+            )
             
             total_summ = total_summ + row[10]
         
