@@ -254,7 +254,7 @@ def get_product(product_id):
                 p.id,
                 p.category_id,
                 c.code AS category,
-                s_active as active,
+                p.is_active as active,
                 p."""+col_title+""" as title,
                 p."""+col_descr+""" as description,
                 p.updated_at,
