@@ -696,8 +696,8 @@ def get_cart():
             
             productsdata = [
                 {"id"       : row[2],
-                 "category" : row[4].strip(),
-                 "title"    : row[5].strip(),
+                 "category" : row[4],
+                 "title"    : row[5],
                  "image"    : row[7],
                  "measure"  : "шт.",
                  "quantity" : row[8],
