@@ -666,6 +666,7 @@ def get_categories():
 def get_cart():
     
     print('user_data: ', user_data)
+    print('TOKENS: ', TOKENS)
     
     # бажана мова, або Українська
     req_lang = request.args.get('lang', 'ua')
