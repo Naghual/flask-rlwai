@@ -82,7 +82,7 @@ def login():
         cur = conn.cursor()
         
         sql = """
-            select usr.id, usr.first_name, usr.last_name, usr.phone, usr.login
+            select usr.id, usr.login, usr.first_name, usr.last_name
             from customers usr
             where 	usr.enabled = true 
                 and usr.login = %s 
@@ -97,7 +97,7 @@ def login():
         
         if rows_count == 1:
             token = secrets.token_hex(16)
-            TOKENS[token] = [row.id, row.login, row.first_name+''+row.last_name, time.time() + TOKEN_TTL]
+            TOKENS[token] = [row[0], row[1], row[2]+''+row[3], time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
             return jsonify({"token": token})
