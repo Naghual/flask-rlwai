@@ -666,8 +666,7 @@ def get_categories():
 
 def get_cart():
     
-    print('request.user_id : ', request.user_id)
-    print('TOKENS: ', TOKENS)
+    #print('request.user_id : ', request.user_id)
     
     
     # бажана мова, або Українська
@@ -712,7 +711,7 @@ def get_cart():
             inner join price_list pl ON pl.product_id = c.product_id AND pl.currency_code = '"""+req_currency+"""'
             inner join categories cat ON cat.id = pr.category_id
             left join images i ON i.product_id = c.product_id
-            where c.customer_id = 11"""
+            where c.customer_id = """ + request.user_id
         
         cur.execute(sql)
         
