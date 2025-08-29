@@ -90,12 +90,12 @@ def login():
         
         params = [username,password]
         cur.execute(sql, params)
-        rows = cur.fetchall()
+        row = cur.fetchone()
         rows_count = cur.rowcount
         
         if rows_count == 1:
             token = secrets.token_hex(16)
-            TOKENS[token] = [rows[1].id, rows[1].login, rows[0].first_name+''+rows[0].last_name, time.time() + TOKEN_TTL]
+            TOKENS[token] = [row.id, row.login, row.first_name+''+row.last_name, time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
             return jsonify({"token": token})
