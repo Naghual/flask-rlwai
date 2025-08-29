@@ -95,7 +95,7 @@ def login():
         
         if rows_count == 1:
             token = secrets.token_hex(16)
-            TOKENS[token] = [rows[0].id, rows[0].login, rows[0].first_name+''+rows[0].last_name, time.time() + TOKEN_TTL]
+            TOKENS[token] = [rows[0].idd, rows[0].login, rows[0].first_name+''+rows[0].last_name, time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
             return jsonify({"token": token})
