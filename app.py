@@ -92,6 +92,8 @@ def login():
         cur.execute(sql, params)
         row = cur.fetchone()
         rows_count = cur.rowcount
+
+        print('Results: ', row)
         
         if rows_count == 1:
             token = secrets.token_hex(16)
