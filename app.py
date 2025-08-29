@@ -55,9 +55,11 @@ def require_auth(f):
         if time.time() > token_expire_date:
             del TOKENS[token]
             return jsonify({"error": "Token expired"}), 401
-
-        request.user = user_name
-        request.user_id = user_id
+        
+        request.user_id     = user_id
+        request.user_login  = user_login
+        request.user_name   = user_name
+        
         return f(*args, **kwargs)
     return decorated
 
@@ -711,7 +713,7 @@ def get_cart():
             inner join price_list pl ON pl.product_id = c.product_id AND pl.currency_code = '"""+req_currency+"""'
             inner join categories cat ON cat.id = pr.category_id
             left join images i ON i.product_id = c.product_id
-            where c.customer_id = """ + request.user_id
+            where c.customer_id = """ + str(request.user_id)
         
         cur.execute(sql)
         
