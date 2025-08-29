@@ -26,6 +26,7 @@ app = Flask(__name__)
 TOKEN_TTL = 172800  # 48 годин
 #TOKENS["tokenstring"] = [user_id, user_login, user_name, token_expire_date]
 TOKENS = {}
+user_data = {}
 
 
 # --------------------------------------------------------------
@@ -663,6 +664,8 @@ def get_categories():
 @require_auth
 
 def get_cart():
+    
+    print('user_data: ', user_data)
     
     # бажана мова, або Українська
     req_lang = request.args.get('lang', 'ua')
