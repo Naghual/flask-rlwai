@@ -84,9 +84,7 @@ def login():
         sql = """
             select usr.id, usr.first_name, usr.last_name, usr.phone, usr.login
             from customers usr
-            where 	usr.enabled = true 
-                and usr.login = '%s'
-                and usr.phrase = '%s'"""
+            where 	usr.enabled = true and usr.login = '%s' and usr.phrase = '%s'"""
         
         params = [username,password]
         cur.execute(sql, params)
