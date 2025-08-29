@@ -20,10 +20,12 @@ app = Flask(__name__)
 # ==============================================================
 # --------------------------------------------------------------
 # 🔐 Звичайна база користувачів та токенів
-USERS = {"admin": "1234"}
-TOKENS = {}  # token -> (username, expiry)
-TOKEN_TTL = 172800  # 48 годин
 
+#USERS = {"admin": "1234"}
+#TOKENS = {}  # token -> (username, expiry)
+TOKEN_TTL = 172800  # 48 годин
+#TOKENS["tokenstring"] = [user_id, user_login, user_name, token_expire_date]
+TOKENS = {}
 
 
 # --------------------------------------------------------------
@@ -37,17 +39,23 @@ def require_auth(f):
             return jsonify({"error": "Authorization header missing"}), 401
 
         token = auth.split(' ')[1]
-        user_data = TOKENS.get(token)
-
-        if not user_data:
+        #user_data = TOKENS.get(token)
+        if token in TOKENS:
+            user_data = TOKENS[token]
+        else:
             return jsonify({"error": "Invalid or expired token"}), 401
 
-        username, expiry = user_data
-        if time.time() > expiry:
+        #if not user_data:
+        #    return jsonify({"error": "Invalid or expired token"}), 401
+
+        #username, expiry = user_data
+        user_id, user_login, user_name, token_expire_date = user_data
+        
+        if time.time() > token_expire_date:
             del TOKENS[token]
             return jsonify({"error": "Token expired"}), 401
 
-        request.user = username
+        request.user = user_name
         return f(*args, **kwargs)
     return decorated
 
@@ -67,14 +75,49 @@ def login():
 
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
+    
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        sql = """
+            select usr.id, usr.first_name, usr.last_name, usr.phone, usr.login
+            from customers usr
+            where 	usr.enabled = true 
+                and usr.login = '%s'
+                and usr.phrase = '%s'"""
+        
+        params = [username,password]
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        
+        if rows_count == 1:
+            token = secrets.token_hex(16)
+            TOKENS[token] = [rows[0].id, rows[0].login, rows[0].first_name+''+rows[0].last_name, time.time() + TOKEN_TTL]
+            cur.close()
+            conn.close()
+            return jsonify({"token": token})
+            
+        else:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+    except Exception as e:
+        cur.close()
+        conn.close() 
+        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+    
+    
+    # if USERS.get(username) != password:
+    #     return jsonify({"error": "Invalid credentials"}), 401
 
-    if USERS.get(username) != password:
-        return jsonify({"error": "Invalid credentials"}), 401
+    # token = secrets.token_hex(16)
+    # TOKENS[token] = (username, time.time() + TOKEN_TTL)
 
-    token = secrets.token_hex(16)
-    TOKENS[token] = (username, time.time() + TOKEN_TTL)
-
-    return jsonify({"token": token})
+    # return jsonify({"token": token})
 
 
 
