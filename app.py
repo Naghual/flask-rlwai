@@ -26,7 +26,7 @@ app = Flask(__name__)
 TOKEN_TTL = 172800  # 48 годин
 #TOKENS["tokenstring"] = [user_id, user_login, user_name, token_expire_date]
 TOKENS = {}
-user_data = []
+
 
 
 # --------------------------------------------------------------
@@ -57,6 +57,7 @@ def require_auth(f):
             return jsonify({"error": "Token expired"}), 401
 
         request.user = user_name
+        request.user_id = user_id
         return f(*args, **kwargs)
     return decorated
 
@@ -665,8 +666,9 @@ def get_categories():
 
 def get_cart():
     
-    print('user_data: ', user_data)
+    print('request.user_id : ', request.user_id)
     print('TOKENS: ', TOKENS)
+    
     
     # бажана мова, або Українська
     req_lang = request.args.get('lang', 'ua')
