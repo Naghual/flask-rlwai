@@ -29,6 +29,22 @@ TOKENS = {}
 
 
 
+
+
+# ==============================================================
+# --------------------------------------------------------------
+# 💾 Функція підключення до БД, викликається з кожного маршруту, де потрібно звертатися до бази
+
+def get_db_connection():
+    db_url = os.getenv("DATABASE_URL")   # Читаем URL базы из переменной окружения
+    if not db_url:
+        raise RuntimeError("DATABASE_URL не задана.")
+    return psycopg2.connect(db_url)
+
+
+
+
+# ==============================================================
 # --------------------------------------------------------------
 # 🔐 Декоратор авторизації
 
@@ -62,6 +78,7 @@ def require_auth(f):
         
         return f(*args, **kwargs)
     return decorated
+
 
 
 
@@ -128,23 +145,144 @@ def login():
 
 
 
+# ==============================================================
+# --------------------------------------------------------------
+@app.route("/languages")
+@require_auth
+
+def get_languages():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT code, title FROM public.languages ORDER BY title;")
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        cur.close()
+        conn.close()
+
+        datarows = [
+            {"code": row[0].strip(), "title": row[1]}
+            for row in rows
+        ]
+
+        data = {
+            "count"     :   rows_count,
+            "languages" :   datarows
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 # ==============================================================
 # --------------------------------------------------------------
-# 💾 Функція підключення до БД, викликається з кожного маршруту, де потрібно звертатися до бази
+@app.route("/currencies")
+@require_auth
 
-def get_db_connection():
-    db_url = os.getenv("DATABASE_URL")   # Читаем URL базы из переменной окружения
-    if not db_url:
-        raise RuntimeError("DATABASE_URL не задана.")
-    return psycopg2.connect(db_url)
+def get_currencies():
+
+    lang = request.args.get('lang', 'ua')
+    lang = lang.lower()
+    if lang not in ['ua', 'pl', 'en', 'ru']:
+        lang = 'ua'
+    
+    col_title = 'title_'+lang
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT code, " +col_title+ " FROM public.currencies ORDER BY code;")
+        
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        cur.close()
+        conn.close()
+
+        datarows = [
+            {"code": row[0].strip(), "title": row[1]}
+            for row in rows
+        ]
+        
+        data = {
+            "count"     :   rows_count,
+            "currencies":   datarows
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+                         
+
+
+
+# ==============================================================
+# --------------------------------------------------------------
+# 📗 Запит товарних категорій
+@app.route("/categories")
+@require_auth
+
+def get_categories():
+
+    lang = request.args.get('lang', 'ua')
+    lang = lang.lower()
+    if lang not in ['ua', 'pl', 'en', 'ru']:
+        lang = 'ua'
+    
+    col_title = 'title_'+lang
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        #cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
+        cur.execute("""
+            SELECT 
+            	c.id, 
+            	c.code, 
+            	c.""" + col_title + """, 
+            	COUNT(p.id) as ProductCount
+            FROM 
+                Categories c
+            LEFT JOIN 
+                Products p ON c.id = p.category_id
+            GROUP BY 
+                c.id, c.title_ru 
+            ORDER BY c.id;""")
+
+        
+        rows = cur.fetchall()
+        rows_count = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        datarows = [
+            {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": row[3]}
+            for row in rows
+        ]
+        
+        data = {
+            "count"     :   rows_count,
+            "categories":   datarows
+        }
+        
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
 
 # ==============================================================
 # --------------------------------------------------------------
-# 📦 Запит списку товарів
+# 📦 Отримати список товарів [GET]
+#    Отримати перелік товарів.  
+#    Також, для кожної категоріі повертається кількість підпорядковиних товарів.  
 # Когда ты стучишься к аппке GET-запросом по адресу https://<аппка>/products
 # то вызывается функция, которая описана непосредственно под определением роута "@app.route('/products', methods=['GET'])" 
 # В нашем случае - get_products()
@@ -208,6 +346,15 @@ def get_products():
                 sql += "    WHERE c.id = %s"
         
         sql += "    ORDER BY c.code, p."+col_title
+        
+        
+        if req_limit <= 0 :
+            req_limit = 40
+        sql += "    LIMIT "+req_limit
+        
+        if req_start > 0 :
+            sql += "    OFFSET "+req_start    
+        
         
         
         # При выполнении запроса либа проверит и подставит твои параметры запроса
@@ -396,269 +543,6 @@ def get_product(product_id):
     
     
     
-    
-    
-# ==============================================================
-# --------------------------------------------------------------
-@app.route('/orders', methods=['POST'])
-@require_auth
-
-def create_order():
-    # Для POST-запроса параметры извлекаются немного по другому
-    
-    # 1. Если прилетело из веб-формы из стандартного сайта, типа
-    # <form method="POST" action="/login">
-    #   <input name="username">
-    #   <input name="password">
-    # </form>
-    # то получаем их через методы типа username = request.form.get('username')
-    
-    # 2. Если в теле запроса прислали JSON, как это делают в REST-запросах (это наш случай), типа
-    # Content-Type: application/json:    
-    # {
-    #   "username": "Doe",
-    #   "password": "secret"
-    # }
-    # , то используем data = request.get_json(), он отдает массив и обращается к нему дальше в коде 
-    # так - data['username']
-    # или так - data.get('username')
-    
-    data = request.get_json()
-    
-    if not data or 'customer_id' not in data or 'items' not in data:
-        return jsonify({"error": "Missing data"}), 400  # Проверка наличия данных
-    
-    customer_id = data['customer_id']
-    items = data['items']
-    
-    if not items or not isinstance(items, list):
-        return jsonify({"error": "Items list is required"}), 400  # Проверка структуры
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Вставляем заказ и получаем его ID
-        cursor.execute(
-            "INSERT INTO orders (customer_id, invoice_date) VALUES (%s, CURRENT_TIMESTAMP) RETURNING order_id;",
-            (customer_id,)
-        )
-        order_id = cursor.fetchone()[0]
-        
-        for item in items:
-            product_id = item.get('product_id')
-            quantity = item.get('quantity')
-            price = item.get('price')
-            
-            if not all([product_id, quantity, price]):
-                continue  # Пропускаем неполные строки
-
-            cursor.execute(
-                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
-                (order_id, product_id, quantity, price)
-            )
-            
-        conn.commit()  # Сохраняем изменения
-        cursor.close()
-        conn.close()
-        
-        return jsonify({"message": "Order created successfully", "order_id": order_id}), 201
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-@app.route('/orders', methods=['GET'])
-@require_auth
-
-def get_orders():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Запрос с объединением заказов и их позиций
-        cursor.execute("""
-            SELECT o.order_id, o.customer_id, o.invoice_date, 
-                   oi.order_item_id, oi.product_id, oi.quantity, oi.price,
-                   pn.name as product_name
-            FROM orders o
-            LEFT JOIN order_items oi ON o.order_id = oi.order_id
-            LEFT JOIN product_names pn ON oi.product_id = pn.product_id AND pn.lang_id = 'ua';
-        """)
-
-        orders = cursor.fetchall()
-
-        if orders:
-            orders_list = []
-            current_order = None
-            for order in orders:
-                order_id, customer_id, invoice_date, order_item_id, product_id, quantity, price, product_name = order
-                if current_order != order_id:
-                    if current_order is not None:
-                        orders_list.append(current_order_data)
-                    current_order_data = {
-                        "order_id": order_id,
-                        "customer_id": customer_id,
-                        "invoice_date": invoice_date,
-                        "items": []
-                    }
-                    current_order = order_id
-
-                current_order_data["items"].append({
-                    "order_item_id": order_item_id,
-                    "product_id": product_id,
-                    "product_name": product_name,
-                    "quantity": quantity,
-                    "price": price
-                })
-
-            orders_list.append(current_order_data)
-            cursor.close()
-            conn.close()
-            return jsonify({"orders": orders_list}), 200
-        
-        
-        cursor.close()
-        conn.close()
-        return jsonify({"message": "No orders found"}), 404
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-# --------------------------------------------------------------
-@app.route("/languages")
-@require_auth
-
-def get_languages():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT code, title FROM public.languages ORDER BY title;")
-        rows = cur.fetchall()
-        rows_count = cur.rowcount
-        cur.close()
-        conn.close()
-
-        datarows = [
-            {"code": row[0].strip(), "title": row[1]}
-            for row in rows
-        ]
-
-        data = {
-            "count"     :   rows_count,
-            "languages" :   datarows
-        }
-        
-        return jsonify(data), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-# --------------------------------------------------------------
-@app.route("/currencies")
-@require_auth
-
-def get_currencies():
-
-    lang = request.args.get('lang', 'ua')
-    lang = lang.lower()
-    if lang not in ['ua', 'pl', 'en', 'ru']:
-        lang = 'ua'
-    
-    col_title = 'title_'+lang
-    
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT code, " +col_title+ " FROM public.currencies ORDER BY code;")
-        
-        rows = cur.fetchall()
-        rows_count = cur.rowcount
-        cur.close()
-        conn.close()
-
-        datarows = [
-            {"code": row[0].strip(), "title": row[1]}
-            for row in rows
-        ]
-        
-        data = {
-            "count"     :   rows_count,
-            "currencies":   datarows
-        }
-        
-        return jsonify(data), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-# ==============================================================
-# --------------------------------------------------------------
-# 📗 Запит товарних категорій
-@app.route("/categories")
-@require_auth
-
-def get_categories():
-
-    lang = request.args.get('lang', 'ua')
-    lang = lang.lower()
-    if lang not in ['ua', 'pl', 'en', 'ru']:
-        lang = 'ua'
-    
-    col_title = 'title_'+lang
-    
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        #cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
-        cur.execute("""
-            SELECT 
-            	c.id, 
-            	c.code, 
-            	c.""" + col_title + """, 
-            	COUNT(p.id) as ProductCount
-            FROM 
-                Categories c
-            LEFT JOIN 
-                Products p ON c.id = p.category_id
-            GROUP BY 
-                c.id, c.title_ru 
-            ORDER BY c.id;""")
-
-        
-        rows = cur.fetchall()
-        rows_count = cur.rowcount
-        cur.close()
-        conn.close()
-        
-        datarows = [
-            {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": row[3]}
-            for row in rows
-        ]
-        
-        data = {
-            "count"     :   rows_count,
-            "categories":   datarows
-        }
-        
-        return jsonify(data), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
 
 # ==============================================================
 # --------------------------------------------------------------
@@ -772,6 +656,173 @@ def get_cart():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+
+# ==============================================================
+# --------------------------------------------------------------
+@app.route('/orders', methods=['GET'])
+@require_auth
+
+def get_orders():
+    
+    # бажана мова, або Українська
+    req_lang = request.args.get('lang', 'ua')
+    req_lang = req_lang.lower()
+    if req_lang not in ['ua', 'pl', 'en', 'ru']:
+        req_lang = 'ua'
+        
+    # бажана валюта, або євро
+    req_currency = request.args.get('currency', 'uah')
+    req_currency = req_currency.lower()
+    if req_currency == '':
+        req_currency = 'uah'
+    
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Запрос с объединением заказов и их позиций
+        cursor.execute("""
+            SELECT 
+                o.order_id, 
+                o.customer_id, 
+                o.invoice_date, 
+                o.invoice_number, 
+                o.total,
+                o.status,
+                oi.order_item_id, 
+                oi.product_id, 
+                oi.quantity, 
+                oi.price,
+                pn.name as product_name
+            FROM orders o
+            LEFT JOIN order_items oi ON o.order_id = oi.order_id
+            LEFT JOIN product_names pn ON oi.product_id = pn.product_id AND pn.lang_id = 'ua';
+        """)
+
+        orders = cursor.fetchall()
+
+        if orders:
+            orders_list = []
+            current_order = None
+            for order in orders:
+                order_id, customer_id, invoice_date, invoice_number, total, status, order_item_id, product_id, quantity, price, product_name = order
+                if current_order != order_id:
+                    if current_order is not None:
+                        orders_list.append(current_order_data)
+                    current_order_data = {
+                        "id"            : order_id,
+                        "TTN"           : invoice_number,
+                        "date_ordered"  : invoice_date,
+                        "status"        : status,
+                        "summ"          : total,
+                        "items": []
+                    }
+                    current_order = order_id
+
+                current_order_data["items"].append({
+                    "order_item_id": order_item_id,
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "quantity": quantity,
+                    "price": price
+                })
+
+            orders_list.append(current_order_data)
+            cursor.close()
+            conn.close()
+            return jsonify(
+                {
+                    "count"     : len(orders_list),
+                    "orders"    : orders_list,
+                    
+                }), 200
+        
+        
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "No orders found"}), 404
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+    
+# ==============================================================
+# --------------------------------------------------------------
+@app.route('/orders', methods=['POST'])
+@require_auth
+
+def create_order():
+    # Для POST-запроса параметры извлекаются немного по другому
+    
+    # 1. Если прилетело из веб-формы из стандартного сайта, типа
+    # <form method="POST" action="/login">
+    #   <input name="username">
+    #   <input name="password">
+    # </form>
+    # то получаем их через методы типа username = request.form.get('username')
+    
+    # 2. Если в теле запроса прислали JSON, как это делают в REST-запросах (это наш случай), типа
+    # Content-Type: application/json:    
+    # {
+    #   "username": "Doe",
+    #   "password": "secret"
+    # }
+    # , то используем data = request.get_json(), он отдает массив и обращается к нему дальше в коде 
+    # так - data['username']
+    # или так - data.get('username')
+    
+    data = request.get_json()
+    
+    if not data or 'customer_id' not in data or 'items' not in data:
+        return jsonify({"error": "Missing data"}), 400  # Проверка наличия данных
+    
+    customer_id = data['customer_id']
+    items = data['items']
+    
+    if not items or not isinstance(items, list):
+        return jsonify({"error": "Items list is required"}), 400  # Проверка структуры
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Вставляем заказ и получаем его ID
+        cursor.execute(
+            "INSERT INTO orders (customer_id, invoice_date) VALUES (%s, CURRENT_TIMESTAMP) RETURNING order_id;",
+            (customer_id,)
+        )
+        order_id = cursor.fetchone()[0]
+        
+        for item in items:
+            product_id = item.get('product_id')
+            quantity = item.get('quantity')
+            price = item.get('price')
+            
+            if not all([product_id, quantity, price]):
+                continue  # Пропускаем неполные строки
+
+            cursor.execute(
+                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
+                (order_id, product_id, quantity, price)
+            )
+            
+        conn.commit()  # Сохраняем изменения
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"message": "Order created successfully", "order_id": order_id}), 201
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 
 
