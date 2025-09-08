@@ -693,7 +693,7 @@ def get_order(product_id):
         # Запрос с объединением заказов и их позиций
         cursor.execute("""
             SELECT 
-                o.order_id, 
+                o.id, 
                 o.customer_id, 
                 o.invoice_date, 
                 o.invoice_number, 
