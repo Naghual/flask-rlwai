@@ -316,10 +316,14 @@ def get_products():
 
         sql += "    ORDER BY c.code, p." + col_title
 
+        if req_limit = None:
+            req_limit = 40
         if req_limit <= 0:
             req_limit = 40
         sql += "    LIMIT " + req_limit
 
+        if req_start = None:
+            req_start = 0
         if req_start > 0:
             sql += "    OFFSET " + req_start
 
@@ -621,7 +625,7 @@ def get_orders():
         # Запрос с объединением заказов и их позиций
         cursor.execute("""
             SELECT 
-                o.order_id,
+                o.id,
                 o.order_date,  
                 o.invoice_date, 
                 o.invoice_number,
