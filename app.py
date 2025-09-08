@@ -677,6 +677,9 @@ def get_order(product_id):
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
 
+    col_title = 'title_' + req_lang
+
+
     # бажана валюта, або євро
     req_currency = request.args.get('currency', 'uah')
     req_currency = req_currency.lower()
@@ -700,10 +703,9 @@ def get_order(product_id):
                 oi.product_id, 
                 oi.quantity, 
                 oi.price,
-                pn.name as product_name
+                pn.""" +col_title+ """ as product_name
             FROM orders o
-            LEFT JOIN order_items oi ON o.order_id = oi.order_id
-            LEFT JOIN product_names pn ON oi.product_id = pn.product_id AND pn.lang_id = 'ua';
+            LEFT JOIN order_items oi ON o.id = oi.order_id;
         """, (product_id,))
 
         orders = cursor.fetchall()
