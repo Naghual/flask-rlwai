@@ -320,12 +320,12 @@ def get_products():
             req_limit = 40
         if req_limit <= 0:
             req_limit = 40
-        sql += "    LIMIT " + req_limit
+        sql += "    LIMIT " + str(req_limit)
 
         if req_start is None:
             req_start = 0
         if req_start > 0:
-            sql += "    OFFSET " + req_start
+            sql += "    OFFSET " + str(req_start)
 
             # При выполнении запроса либа проверит и подставит твои параметры запроса
         cur.execute(sql, params)
