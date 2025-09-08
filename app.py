@@ -637,6 +637,8 @@ def get_orders():
 
         orders = cursor.fetchall()
 
+        orders_list = []
+
         for ord in orders:
             orders_list.append(
                 {   "id"            : ord[0],
