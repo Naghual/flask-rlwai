@@ -316,13 +316,13 @@ def get_products():
 
         sql += "    ORDER BY c.code, p." + col_title
 
-        if req_limit = None:
+        if req_limit is None:
             req_limit = 40
         if req_limit <= 0:
             req_limit = 40
         sql += "    LIMIT " + req_limit
 
-        if req_start = None:
+        if req_start is None:
             req_start = 0
         if req_start > 0:
             sql += "    OFFSET " + req_start
