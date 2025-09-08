@@ -641,7 +641,7 @@ def get_orders():
                     "date_delivered": ord[4],
                     "status"        : ord[6],
                     "summ"          : ord[5]
-                }
+                })
 
         cursor.close()
         conn.close()
