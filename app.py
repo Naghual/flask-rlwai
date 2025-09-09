@@ -663,12 +663,12 @@ def get_orders():
 
 # ==============================================================
 # --------------------------------------------------------------
-@app.route('/orders/<int:product_id>', methods=['GET'])
+@app.route('/orders/<int:order_id>', methods=['GET'])
 @require_auth
-def get_order(product_id):
+def get_order(order_id):
     # перевірка на заповненність АйДи товару
-    # product_id = request.args.get('product_id', 0)
-    if product_id == 0:
+    # order_id = request.args.get('order_id', 0)
+    if order_id == 0:
         return jsonify({"message": "No product ID specified"}), 400
 
     # бажана мова, або Українська
@@ -699,14 +699,14 @@ def get_order(product_id):
                 o.invoice_number, 
                 o.total,
                 o.status,
-                oi.id as order_item_id,
+                oi.id as order_item_id, 
                 oi.product_id, 
                 oi.quantity, 
                 oi.price,
                 pn.""" +col_title+ """ as product_name
             FROM orders o
-            LEFT JOIN order_items oi ON o.id = oi.order_id;
-        """, (product_id,))
+            LEFT JOIN order_items oi ON oi.order_id = o.id 
+            WHERE o.id = %s """, (order_id,))
 
         orders = cursor.fetchall()
 
