@@ -844,7 +844,7 @@ def create_order():
 
         cursor.execute("""
             UPDATE orders
-            SET total = order_total
+            SET total = """ +order_total+ """
             WHERE id = """ + str(order_id), ()
         )
         conn.commit()  # Сохраняем изменения
