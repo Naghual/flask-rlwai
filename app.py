@@ -699,7 +699,7 @@ def get_order(product_id):
                 o.invoice_number, 
                 o.total,
                 o.status,
-                oi.order_item_id, 
+                oi.id as order_item_id,
                 oi.product_id, 
                 oi.quantity, 
                 oi.price,
