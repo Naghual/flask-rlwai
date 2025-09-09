@@ -787,37 +787,52 @@ def create_order():
 
     data = request.get_json()
 
-    if not data or 'customer_id' not in data or 'items' not in data:
+    if not data     or 'products' not in data   or 'currency' not in data   or not request.user_id:
         return jsonify({"error": "Missing data"}), 400  # Проверка наличия данных
 
-    customer_id = data['customer_id']
-    items = data['items']
+    currency = data['currency']
+    products = data['products']
 
-    if not items or not isinstance(items, list):
-        return jsonify({"error": "Items list is required"}), 400  # Проверка структуры
+    if not products or not isinstance(products, list):
+        return jsonify({"error": "products list is required"}), 400  # Проверка структуры
+
+    #WHERE
+    #o.customer_id = """ + str(request.user_id) )
+
 
     try:
         conn = get_db_connection()
+        conn.autocommit = False     # manual transactions
         cursor = conn.cursor()
 
         # Вставляем заказ и получаем его ID
         cursor.execute(
-            "INSERT INTO orders (customer_id, invoice_date) VALUES (%s, CURRENT_TIMESTAMP) RETURNING order_id;",
-            (customer_id,)
+            "INSERT INTO orders (customer_id, order_date, status) VALUES (%s, CURRENT_TIMESTAMP, 'new') RETURNING id;",
+            (str(request.user_id),)
         )
         order_id = cursor.fetchone()[0]
 
-        for item in items:
-            product_id = item.get('product_id')
-            quantity = item.get('quantity')
-            price = item.get('price')
+        for item in products:
 
-            if not all([product_id, quantity, price]):
+            product_id = item.get('id')
+            quantity = item.get('quantity')
+            # price       = item.get('price')
+            cursor.execute("""
+            SELECT 
+                p.id,
+                pl.price,
+            from Products p
+            inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
+            where p.id = %s""")
+            price = cursor.fetchone()[1]
+            total = price * quantity
+
+            if not all([product_id, quantity, price, total]):
                 continue  # Пропускаем неполные строки
 
             cursor.execute(
-                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
-                (order_id, product_id, quantity, price)
+                "INSERT INTO order_items (order_id, product_id, quantity, price, total) VALUES (%s, %s, %s, %s, %s);",
+                (order_id, product_id, quantity, price, total)
             )
 
         conn.commit()  # Сохраняем изменения
