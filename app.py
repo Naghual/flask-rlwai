@@ -763,7 +763,7 @@ def get_order(order_id):
 
 # ==============================================================
 # --------------------------------------------------------------
-@app.route('/orders', methods=['POST'])
+@app.route('/orders/new', methods=['POST'])
 @require_auth
 def create_order():
     # Для POST-запроса параметры извлекаются немного по другому
