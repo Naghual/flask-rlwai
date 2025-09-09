@@ -705,7 +705,8 @@ def get_order(order_id):
                 oi.price,
                 pn.""" +col_title+ """ as product_name
             FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id 
+            LEFT JOIN order_items oi ON o.id = oi.order_id
+            LEFT JOIN products p ON p.id = oi.product_id 
             WHERE o.id = %s """, (order_id,))
 
         orders = cursor.fetchall()
