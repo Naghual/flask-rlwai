@@ -117,8 +117,8 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 401
 
     except Exception as e:
-        cur.close()
-        conn.close()
+        #cur.close()
+        #conn.close()
         return jsonify({"error": str(e)}), 500  # Ошибка сервера
 
     # if USERS.get(username) != password:
@@ -824,7 +824,11 @@ def create_order():
             from Products p
             inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
             where p.id = %s""")
+
+            print('Product Results 0: ', cursor.fetchone()[0])
             price = cursor.fetchone()[1]
+            print('Product Results 1: ', price)
+            #price = cursor.fetchone()[1]
             total = price * quantity
 
             if not all([product_id, quantity, price, total]):
