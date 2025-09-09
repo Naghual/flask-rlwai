@@ -807,10 +807,11 @@ def create_order():
 
         # Вставляем заказ и получаем его ID
         cursor.execute(
-            "INSERT INTO orders (customer_id, order_date, status) VALUES (%s, CURRENT_TIMESTAMP, 'new') RETURNING id;",
+            "INSERT INTO orders (customer_id, order_date, status, total) VALUES (%s, CURRENT_TIMESTAMP, 'new', 1) RETURNING id;",
             (str(request.user_id),)
         )
         order_id = cursor.fetchone()[0]
+        order_total = 0
 
         for item in products:
 
@@ -830,6 +831,7 @@ def create_order():
             print('Product Results 1: ', price)
             #price = cursor.fetchone()[1]
             total = price * quantity
+            order_total = order_total + total
 
             if not all([product_id, quantity, price, total]):
                 continue  # Пропускаем неполные строки
@@ -839,6 +841,11 @@ def create_order():
                 (order_id, product_id, quantity, price, total)
             )
 
+        cursor.execute("""
+            UPDATE orders
+            SET total = order_total
+            WHERE id = """ + str(order_id), (,)
+        )
         conn.commit()  # Сохраняем изменения
         cursor.close()
         conn.close()
