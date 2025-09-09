@@ -825,7 +825,7 @@ def create_order():
             FROM Products p
             INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
             WHERE p.id = %s""", (product_id,))
-            
+
             Results = cursor.fetchone()
             print('Product Results 0: ', Results[0])
             price = Results[1]
@@ -834,12 +834,12 @@ def create_order():
             total = price * quantity
             order_total = order_total + total
 
-            if not all([product_id, quantity, price, total]):
+            if not all([product_id, quantity, price]):
                 continue  # Пропускаем неполные строки
 
             cursor.execute(
-                "INSERT INTO order_items (order_id, product_id, quantity, price, total) VALUES (%s, %s, %s, %s, %s);",
-                (order_id, product_id, quantity, price, total)
+                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
+                (order_id, product_id, quantity, price)
             )
 
         cursor.execute("""
