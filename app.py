@@ -805,12 +805,16 @@ def create_order():
         conn.autocommit = False     # manual transactions
         cursor = conn.cursor()
 
-        # Вставляем заказ и получаем его ID
-        cursor.execute(
-            "INSERT INTO orders (customer_id, order_date, status, total) VALUES (%s, CURRENT_TIMESTAMP, 'new', 1) RETURNING id;",
-            (str(request.user_id),)
-        )
-        order_id = cursor.fetchone()[0]
+        try:
+            # Вставляем заказ и получаем его ID
+            cursor.execute(
+                "INSERT INTO orders (customer_id, order_date, status, total) VALUES (%s, CURRENT_TIMESTAMP, 'new', 1) RETURNING id;",
+                (str(request.user_id),)
+            )
+            order_id = cursor.fetchone()[0]
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
         order_total = 0
 
         for item in products:
@@ -818,15 +822,19 @@ def create_order():
             product_id = item.get('id')
             quantity = item.get('quantity')
             # price       = item.get('price')
-            cursor.execute("""
-            SELECT 
-                p.id,
-                pl.price
-            FROM Products p
-            INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
-            WHERE p.id = %s""", (product_id,))
+            try:
+                cursor.execute("""
+                SELECT 
+                    p.id,
+                    pl.price
+                FROM Products p
+                INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
+                WHERE p.id = %s""", (product_id,))
 
-            Results = cursor.fetchone()
+                Results = cursor.fetchone()
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
             print('Product Results 0: ', Results[0])
             price = Results[1]
             print('Product Results 1: ', price)
@@ -835,13 +843,17 @@ def create_order():
             order_total = order_total + total
 
             if not all([product_id, quantity, price]):
+                print('Пропускаем неполную строку')
                 continue  # Пропускаем неполные строки
 
-            cursor.execute(
-                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
-                (order_id, product_id, quantity, price)
-            )
-
+            try:
+                cursor.execute(
+                    "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
+                    (order_id, product_id, quantity, price)
+                )
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+    
         cursor.execute("""
             UPDATE orders
             SET total = """ +str(order_total)+ """
