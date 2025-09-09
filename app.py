@@ -76,6 +76,9 @@ def require_auth(f):
 # 🔐 Точка входу для отримання токену
 @app.route('/login', methods=['POST'])
 def login():
+    
+    print('+++/login:')
+    
     data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
@@ -86,6 +89,8 @@ def login():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
+    print('    username:' + str(username) + '; password:' + str(password))
+    
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -135,6 +140,9 @@ def login():
 @app.route("/languages")
 @require_auth
 def get_languages():
+
+    print('+++/languages: user:'+str(request.user_id))
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -165,6 +173,9 @@ def get_languages():
 @app.route("/currencies")
 @require_auth
 def get_currencies():
+
+    print('+++/currencies: user:' + str(request.user_id))
+
     lang = request.args.get('lang', 'ua')
     lang = lang.lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
@@ -204,6 +215,9 @@ def get_currencies():
 @app.route("/categories")
 @require_auth
 def get_categories():
+
+    print('+++/categories: user:' + str(request.user_id))
+
     lang = request.args.get('lang', 'ua')
     lang = lang.lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
@@ -262,6 +276,9 @@ def get_categories():
 @app.route('/products', methods=['GET'])
 @require_auth
 def get_products():
+
+    print('+++/products: user:' + str(request.user_id))
+
     # Получаем параметры запроса
     # это именно GET-параметры - request.args.get(param name)
     # как работать с POST описал в комментах в create_order()
@@ -281,6 +298,18 @@ def get_products():
     req_lang = req_lang.lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
+
+    if req_start is None:
+        req_start = 0
+
+    if req_limit is None:
+        req_limit = 40
+
+    print('    start:'+str(req_start)+ '; limit:'+str(req_limit))
+    print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
+
+    try:
+        conn = get_db_connection()
 
     col_title = 'title_' + req_lang
 
@@ -316,14 +345,10 @@ def get_products():
 
         sql += "    ORDER BY c.code, p." + col_title
 
-        if req_limit is None:
-            req_limit = 40
         if req_limit <= 0:
             req_limit = 40
         sql += "    LIMIT " + str(req_limit)
 
-        if req_start is None:
-            req_start = 0
         if req_start > 0:
             sql += "    OFFSET " + str(req_start)
 
@@ -639,14 +664,14 @@ def get_orders():
 
         orders_list = []
 
-        for ord in orders:
+        for ordr in orders:
             orders_list.append(
-                {   "id"            : ord[0],
-                    "TTN"           : ord[3],
-                    "date_ordered"  : ord[1],
-                    "date_delivered": ord[4],
-                    "status"        : ord[6],
-                    "summ"          : ord[5]
+                {   "id"            : ordr[0],
+                    "TTN"           : ordr[3],
+                    "date_ordered"  : ordr[1],
+                    "date_delivered": ordr[4],
+                    "status"        : ordr[6],
+                    "summ"          : ordr[5]
                 })
 
         cursor.close()
@@ -831,12 +856,12 @@ def create_order():
                 INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
                 WHERE p.id = %s""", (product_id,))
 
-                Results = cursor.fetchone()
+                results = cursor.fetchone()
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
-            print('Product Results 0: ', Results[0])
-            price = Results[1]
+            print('Product Results 0: ', results[0])
+            price = results[1]
             print('Product Results 1: ', price)
             #price = cursor.fetchone()[1]
             total = price * quantity
@@ -853,7 +878,7 @@ def create_order():
                 )
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
-    
+
         cursor.execute("""
             UPDATE orders
             SET total = """ +str(order_total)+ """
