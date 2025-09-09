@@ -76,9 +76,9 @@ def require_auth(f):
 # 🔐 Точка входу для отримання токену
 @app.route('/login', methods=['POST'])
 def login():
-    
+
     print('+++/login:')
-    
+
     data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
@@ -90,7 +90,7 @@ def login():
         return jsonify({"error": "Missing username or password"}), 400
 
     print('    username:' + str(username) + '; password:' + str(password))
-    
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -307,9 +307,6 @@ def get_products():
 
     print('    start:'+str(req_start)+ '; limit:'+str(req_limit))
     print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
-
-    try:
-        conn = get_db_connection()
 
     col_title = 'title_' + req_lang
 
