@@ -824,7 +824,7 @@ def create_order():
                 pl.price
             FROM Products p
             INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
-            WHERE p.id = %s""")
+            WHERE p.id = %s""", (product_id,))
 
             print('Product Results 0: ', cursor.fetchone()[0])
             price = cursor.fetchone()[1]
