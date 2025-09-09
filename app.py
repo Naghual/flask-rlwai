@@ -703,7 +703,7 @@ def get_order(order_id):
                 oi.product_id, 
                 oi.quantity, 
                 oi.price,
-                pn.""" +col_title+ """ as product_name
+                p.""" +col_title+ """ as product_name
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             LEFT JOIN products p ON p.id = oi.product_id 
