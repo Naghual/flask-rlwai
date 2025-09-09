@@ -821,10 +821,10 @@ def create_order():
             cursor.execute("""
             SELECT 
                 p.id,
-                pl.price,
-            from Products p
-            inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
-            where p.id = %s""")
+                pl.price
+            FROM Products p
+            INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
+            WHERE p.id = %s""")
 
             print('Product Results 0: ', cursor.fetchone()[0])
             price = cursor.fetchone()[1]
