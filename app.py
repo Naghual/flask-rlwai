@@ -107,14 +107,15 @@ def login():
         row = cur.fetchone()
         rows_count = cur.rowcount
 
-        print('Results: ', row)
+        print('DB Results: ', row)
 
         if rows_count == 1:
             token = secrets.token_hex(16)
-            TOKENS[token] = [row[0], row[1], row[2] + ' ' + row[3], time.time() + TOKEN_TTL]
+            TOKENS[token] = [row[0], row[1], row[2] + " " + row[3], time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
-            return jsonify({"token": token, "user": row[2] + '' + row[3]})
+            print('TOKEN Result: ', TOKENS[token])
+            return jsonify({"token": token, "user": row[2] + " " + row[3]})
 
         else:
             cur.close()
