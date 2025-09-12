@@ -111,7 +111,7 @@ def login():
 
         if rows_count == 1:
             token = secrets.token_hex(16)
-            TOKENS[token] = [row[0], row[1], row[2] + '' + row[3], time.time() + TOKEN_TTL]
+            TOKENS[token] = [row[0], row[1], row[2] + ' ' + row[3], time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
             return jsonify({"token": token, "user": row[2] + '' + row[3]})
