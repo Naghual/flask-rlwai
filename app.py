@@ -114,7 +114,7 @@ def login():
             TOKENS[token] = [row[0], row[1], row[2] + '' + row[3], time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
-            return jsonify({"token": token})
+            return jsonify({"token": token, "user": row[2] + '' + row[3]})
 
         else:
             cur.close()
