@@ -252,10 +252,10 @@ def get_categories():
             FROM 
                 Categories c
             LEFT JOIN 
-                Products p ON c.id = p.category_id
+                Products p ON c.code = p.category_code
             GROUP BY 
-                c.id, c.title_ru 
-            ORDER BY c.id;""")
+                c.id, c."""+col_title+""" 
+            ORDER BY c.code;""")
 
         rows = cur.fetchall()
         rows_count = cur.rowcount
@@ -932,3 +932,4 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
+
