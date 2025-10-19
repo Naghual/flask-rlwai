@@ -77,7 +77,10 @@ def require_auth(f):
 @app.route('/login', methods=['POST'])
 def login():
 
-    print('+++/login:')
+    bDebug = True
+
+    if bDebug:
+        print('+++ Login')
 
     data = request.get_json()
     if not data:
@@ -89,7 +92,8 @@ def login():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
-    print('    username:' + str(username) + '; password:' + str(password))
+    if bDebug:
+        print('    username:' + str(username) + '; password:' + str(password))
 
     try:
         conn = get_db_connection()
@@ -107,14 +111,16 @@ def login():
         row = cur.fetchone()
         rows_count = cur.rowcount
 
-        print('DB Results: ', row)
+        if bDebug:
+            print('    data fetched: ', row)
 
         if rows_count == 1:
             token = secrets.token_hex(16)
             TOKENS[token] = [row[0], row[1], row[2] + " " + row[3], time.time() + TOKEN_TTL]
             cur.close()
             conn.close()
-            print('TOKEN Result: ', TOKENS[token])
+            if bDebug:
+                print('    TOKEN Result: ', TOKENS[token])
             return jsonify(
                 {
                     "token" : token,
