@@ -222,7 +222,10 @@ def get_currencies():
 @require_auth
 def get_categories():
 
-    print('+++/categories: user:' + str(request.user_id))
+    bDebug = True
+
+    if bDebug:
+        print('+++ Get Categories: user:' + str(request.user_id))
 
     lang = request.args.get('lang', 'ua')
     lang = lang.lower()
@@ -234,7 +237,6 @@ def get_categories():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # cur.execute("SELECT id, code, " + col_title + " FROM public.categories ORDER BY id;")
         cur.execute("""
             SELECT 
             	c.id, 
@@ -253,6 +255,9 @@ def get_categories():
         rows_count = cur.rowcount
         cur.close()
         conn.close()
+
+        if bDebug:
+            print('    data fetched: ' + str(rows_count) + ' rows')
 
         datarows = [
             {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": row[3]}
