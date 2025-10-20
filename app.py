@@ -346,8 +346,8 @@ def get_products():
                 c.code AS category_name,
                 p.""" + col_title + """ AS product_title,
                 p.""" + col_descr + """ AS product_descr,
-                pl.price,
-                pl.stock_quantity
+                COALESCE(pl.price, 0) AS price,
+                COALESCE(pl.stock_quantity, 0) AS quantity
             FROM products p
             LEFT JOIN categories c ON p.category_code = c.code
             LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s"""
@@ -960,4 +960,3 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
-
