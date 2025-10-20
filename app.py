@@ -458,8 +458,7 @@ def get_product(product_id):
         return jsonify({"message": "No product ID specified"}), 400
 
     # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'uah')
-    req_currency = req_currency.lower()
+    req_currency = request.args.get('currency', 'uah').lower()
     if req_currency == '':
         req_currency = 'uah'
 
@@ -488,20 +487,20 @@ def get_product(product_id):
                 p.code,
                 c.id AS category_id,
                 c.code AS category,
-                p.is_active as active,
-                p.""" + col_title + """ as title,
-                p.""" + col_descr + """ as description,
+                p.is_active AS active,
+                p.""" + col_title + """ AS title,
+                p.""" + col_descr + """ AS description,
                 p.updated_at,
-                coalesce(pl.price, 0) as price,
-                coalesce(pl.stock_quantity, 0) as quantity, 
-                coalesce(i.img_data, '') as img_data 
-            from Products p
-            left join categories c ON p.category_code = c.code
-            left join price_list pl ON pl.product_code = p.code AND pl.currency_code = '""" + req_currency + """'
-            left join images i ON i.product_code = p.code
-            where p.id = %s"""
+                COALESCE(pl.price, 0) AS price,
+                COALESCE(pl.stock_quantity, 0) AS quantity, 
+                COALESCE(ENCODE(i.img_data, 'base64'), '') AS img_data 
+            FROM Products p
+            LEFT JOIN categories c ON p.category_code = c.code
+            LEFT JOIN price_list pl ON pl.product_code = p.code AND pl.currency_code = %s
+            LEFT JOIN images i ON i.product_code = p.code
+            WHERE p.id = %s"""
 
-        cur.execute(sql, (product_id,))
+        cur.execute(sql, (req_currency, product_id))
         rows = cur.fetchall()
         rows_count = cur.rowcount
 
@@ -521,7 +520,7 @@ def get_product(product_id):
 
     # має бути лише один!
     if rows_count == 0:
-        return jsonify({"no records found"}), 500  # Ошибка сервера
+        return jsonify({"no records found"}), 404  # Ошибка сервера
 
     if rows_count != 1:
         return jsonify({"records more than expected"}), 500  # Ошибка сервера
@@ -533,11 +532,11 @@ def get_product(product_id):
         conn = get_db_connection()
         cur = conn.cursor()
         sql = """
-            select 
-                i.img_data 
-            from images i
-            where i.product_code = %s
-            order by i.id"""
+            SELECT 
+                ENCODE(i.img_data, 'base64') AS img_data 
+            FROM images i
+            WHERE i.product_code = %s
+            ORDER BY i.id"""
 
         cur.execute(sql, (product_code,))
         img_rows = cur.fetchall()
@@ -556,7 +555,7 @@ def get_product(product_id):
         # Заносимо зображення у масив
         images = []
         for row in img_rows:
-            images.append({'image': row[0]})
+            images.append({'image': row[0] or ''})
         if bDebug:
             print('    images appended.')
 
@@ -569,7 +568,7 @@ def get_product(product_id):
             "active": first_row[4],
             "title": first_row[5],
             "description": first_row[6],
-            "image": first_row[10],
+            "image": first_row[10],  # Уже закодировано в base64
             "quantity": first_row[9],
             "price": first_row[8],
             "images": images
