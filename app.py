@@ -347,8 +347,9 @@ def get_products():
                 pl.price,
                 pl.stock_quantity
             FROM products p
-            INNER JOIN categories c ON p.category_id = c.id
-            INNER JOIN price_list pl ON p.id = pl.product_id AND pl.currency_code = %s"""
+            LEFT JOIN categories c ON p.category_code = c.code
+            LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s
+            """
 
         # Это параметризирванные запросы, защита от инъекций в SQL
         # В тексте SQL ставишь параметры типа %s и кодом "params = [currency, lang]" запихиваешь их в список
@@ -364,7 +365,8 @@ def get_products():
             else:
                 sql += "    WHERE c.id = %s"
 
-        sql += "    ORDER BY c.code, p." + col_title
+        sql += """
+            ORDER BY c.code, p.""" + col_title
 
         if req_limit <= 0:
             req_limit = 40
