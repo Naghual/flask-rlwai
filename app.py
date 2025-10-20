@@ -333,6 +333,7 @@ def get_products():
         print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
 
     col_title = 'title_' + req_lang
+    col_descr = 'descr_' + req_lang
 
     try:
         # Запрос к БД
@@ -344,6 +345,7 @@ def get_products():
                 p.id AS product_id,
                 c.code AS category_name,
                 p.""" + col_title + """ AS product_title,
+                p.""" + col_descr + """ AS product_descr,
                 pl.price,
                 pl.stock_quantity
             FROM products p
@@ -380,12 +382,12 @@ def get_products():
 
         # При выполнении запроса либа проверит и подставит твои параметры запроса
 
-        if bDebug:
-            print('    sql :')
-            print('' + sql,,,,True)
-            print('  ')
-            print('    params :')
-            print('' + str(params))
+        #if bDebug:
+        #    print('    sql :')
+        #    print('' + sql)
+        #    print('  ')
+        #    print('    params :')
+        #    print('' + str(params))
 
         cur.execute(sql, params)
         rows = cur.fetchall()
@@ -401,12 +403,14 @@ def get_products():
                 'id': row[0],
                 'category': row[1],
                 'title': row[2],
-                'description': '',
+                'description': row[3],
                 'image': '',
                 'measure': '',
-                'quantity': row[4],
-                'price': float(row[3])
+                'quantity': row[5],
+                'price': float(row[4])
             })
+            if bDebug:
+                print('    product processed: ' + row[0] + ' : ' + row[2])
 
         # Дисконнект к БД
         cur.close()
