@@ -505,8 +505,8 @@ def get_product(product_id):
         rows = cur.fetchall()
         rows_count = cur.rowcount
 
-        product_code = rows[1]
-        category_id  = rows[2]
+        product_code = rows[0][1]
+        category_id  = rows[0][2]
 
         # Дисконнект від БД
         cur.close()
