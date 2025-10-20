@@ -382,7 +382,7 @@ def get_products():
 
         if bDebug:
             print('    sql :')
-            print('' + sql)
+            print('' + sql,,,,True)
             print('  ')
             print('    params :')
             print('' + str(params))
