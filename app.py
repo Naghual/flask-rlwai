@@ -497,7 +497,7 @@ def get_product(product_id):
             from Products p
             left join categories c ON p.category_code = c.code
             left join price_list pl ON pl.product_code = p.code AND pl.currency_code = '""" + req_currency + """'
-            left join images i ON i.product_id = p.id
+            left join images i ON i.product_code = p.code
             where p.id = %s"""
 
         cur.execute(sql, (product_id,))
@@ -974,4 +974,3 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
-
