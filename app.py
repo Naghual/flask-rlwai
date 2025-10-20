@@ -13,6 +13,11 @@ if os.environ.get("RAILWAY_ENVIRONMENT") is None:
 
 app = Flask(__name__)
 
+
+bDebug = True
+
+
+
 # ==============================================================
 # --------------------------------------------------------------
 # 🔐 Звичайна база користувачів та токенів
@@ -294,7 +299,8 @@ def get_categories():
 @require_auth
 def get_products():
 
-    print('+++/products: user:' + str(request.user_id))
+    if bDebug:
+        print('+++/products: user:' + str(request.user_id))
 
     # Получаем параметры запроса
     # это именно GET-параметры - request.args.get(param name)
@@ -322,8 +328,9 @@ def get_products():
     if req_limit is None:
         req_limit = 40
 
-    print('    start:'+str(req_start)+ '; limit:'+str(req_limit))
-    print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
+    if bDebug:
+        print('    start:'+str(req_start)+ '; limit:'+str(req_limit))
+        print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
 
     col_title = 'title_' + req_lang
 
@@ -366,7 +373,12 @@ def get_products():
         if req_start > 0:
             sql += "    OFFSET " + str(req_start)
 
-            # При выполнении запроса либа проверит и подставит твои параметры запроса
+        # При выполнении запроса либа проверит и подставит твои параметры запроса
+
+        if bDebug:
+            print('    sql :')
+            print('' + sql)
+
         cur.execute(sql, params)
         rows = cur.fetchall()
         rows_count = cur.rowcount
@@ -932,4 +944,3 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
-
