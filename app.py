@@ -410,7 +410,7 @@ def get_products():
                 'price': float(row[4])
             })
             if bDebug:
-                print('    product processed: ' + row[0] + ' : ' + row[2])
+                print('    product processed: ' + str(row[0]) + ' : ' + str(row[2]))
 
         # Дисконнект к БД
         cur.close()
