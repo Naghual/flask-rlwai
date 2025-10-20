@@ -348,8 +348,7 @@ def get_products():
                 pl.stock_quantity
             FROM products p
             LEFT JOIN categories c ON p.category_code = c.code
-            LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s
-            """
+            LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s"""
 
         # Это параметризирванные запросы, защита от инъекций в SQL
         # В тексте SQL ставишь параметры типа %s и кодом "params = [currency, lang]" запихиваешь их в список
@@ -361,19 +360,23 @@ def get_products():
             params.append(req_category)
 
             if isinstance(req_category, str) == True:
-                sql += "    WHERE c.code = %s"
+                sql += """
+                WHERE c.code = %s"""
             else:
-                sql += "    WHERE c.id = %s"
+                sql += """
+                WHERE c.id = %s"""
 
         sql += """
             ORDER BY c.code, p.""" + col_title
 
         if req_limit <= 0:
             req_limit = 40
-        sql += "    LIMIT " + str(req_limit)
+        sql += """
+            LIMIT """ + str(req_limit)
 
         if req_start > 0:
-            sql += "    OFFSET " + str(req_start)
+            sql += """
+                OFFSET """ + str(req_start)
 
         # При выполнении запроса либа проверит и подставит твои параметры запроса
 
@@ -387,6 +390,9 @@ def get_products():
         cur.execute(sql, params)
         rows = cur.fetchall()
         rows_count = cur.rowcount
+
+        if bDebug:
+            print('    rows fetched: ' + str(rows_count))
 
         # Запихиваем результаты запроса в выходной массив
         products = []
