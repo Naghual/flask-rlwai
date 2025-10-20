@@ -507,8 +507,12 @@ def get_product(product_id):
         # Дисконнект від БД
         cur.close()
         conn.close()
+        
+        if bDebug:
+            print('    rows fetched: ' + str(rows_count))
 
     except Exception as e:
+        print('!!! error1: ' + str(e))
         return jsonify({"error (1): ": str(e)}), 500  # Ошибка сервера
 
     # має бути лише один!
@@ -540,6 +544,7 @@ def get_product(product_id):
         conn.close()
 
     except Exception as e:
+        print('!!! error2: ' + str(e))
         return jsonify({"error (2): ": str(e)}), 500  # Ошибка сервера
 
     try:
@@ -568,6 +573,7 @@ def get_product(product_id):
 
 
     except Exception as e:
+        print('!!! error3: ' + str(e))
         return jsonify({"error (3): ": str(e)}), 500  # Ошибка сервера
 
 
@@ -968,3 +974,4 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
+
