@@ -448,6 +448,10 @@ def get_products():
 @app.route('/products/<int:product_id>', methods=['GET'])
 @require_auth
 def get_product(product_id):
+    
+    if bDebug:
+        print('+++/products: user:' + str(request.user_id) + ' ; product_id:' + str(product_id))
+    
     # перевірка на заповненність АйДи товару
     # product_id = request.args.get('product_id', 0)
     if product_id == 0:
@@ -468,6 +472,10 @@ def get_product(product_id):
     col_title = 'title_' + req_lang
     col_descr = 'descr_' + req_lang
 
+
+    if bDebug:
+        print('    currency:' + req_currency + '; lang:' + req_lang)
+
     # 1
     # отримаємо данні про товар
     try:
@@ -477,18 +485,18 @@ def get_product(product_id):
         sql = """
             select 
                 p.id,
-                p.category_id,
+                p.code,
                 c.code AS category,
                 p.is_active as active,
                 p.""" + col_title + """ as title,
                 p.""" + col_descr + """ as description,
                 p.updated_at,
-                pl.price,
-                pl.stock_quantity,
-                i.img_data
+                coalesce(pl.price, 0) as price,
+                coalesce(pl.stock_quantity, 0) as quantity, 
+                coalesce(i.img_data, '') as img_data 
             from Products p
-            inner join categories c ON p.category_id = c.id
-            inner join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" + req_currency + """'
+            left join categories c ON p.category_code = c.code
+            left join price_list pl ON pl.product_code = p.code AND pl.currency_code = '""" + req_currency + """'
             left join images i ON i.product_id = p.id
             where p.id = %s"""
 
