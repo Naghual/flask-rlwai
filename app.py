@@ -557,6 +557,8 @@ def get_product(product_id):
         images = []
         for row in img_rows:
             images.append({'image': row[0]})
+        if bDebug:
+            print('    images appended.')
 
         # Заносимо данні
         first_row = rows[0]
@@ -572,6 +574,9 @@ def get_product(product_id):
             "price": first_row[8],
             "images": images
         }
+        
+        if bDebug:
+            print('    data packed.')
 
         return jsonify(data), 200
 
