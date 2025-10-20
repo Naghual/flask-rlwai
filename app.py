@@ -486,6 +486,7 @@ def get_product(product_id):
             select 
                 p.id,
                 p.code,
+                c.id AS category_id,
                 c.code AS category,
                 p.is_active as active,
                 p.""" + col_title + """ as title,
@@ -503,6 +504,9 @@ def get_product(product_id):
         cur.execute(sql, (product_id,))
         rows = cur.fetchall()
         rows_count = cur.rowcount
+
+        product_code = rows[1]
+        category_id  = rows[2]
 
         # Дисконнект від БД
         cur.close()
@@ -532,10 +536,10 @@ def get_product(product_id):
             select 
                 i.img_data 
             from images i
-            where i.product_id = %s
+            where i.product_code = %s
             order by i.id"""
 
-        cur.execute(sql, (product_id,))
+        cur.execute(sql, (product_code,))
         img_rows = cur.fetchall()
         # img_count = cur.rowcount
 
@@ -558,14 +562,14 @@ def get_product(product_id):
         first_row = rows[0]
         data = {
             "id": first_row[0],
-            "category_id": first_row[1],
-            "category": first_row[2],
-            "active": first_row[3],
-            "title": first_row[4],
-            "description": first_row[5],
-            "image": first_row[9],
-            "quantity": first_row[8],
-            "price": first_row[7],
+            "category_id": first_row[2],
+            "category": first_row[3],
+            "active": first_row[4],
+            "title": first_row[5],
+            "description": first_row[6],
+            "image": first_row[10],
+            "quantity": first_row[9],
+            "price": first_row[8],
             "images": images
         }
 
@@ -974,4 +978,3 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
-
