@@ -378,6 +378,9 @@ def get_products():
         if bDebug:
             print('    sql :')
             print('' + sql)
+            print('  ')
+            print('    params :')
+            print('' + str(params))
 
         cur.execute(sql, params)
         rows = cur.fetchall()
