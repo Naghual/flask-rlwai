@@ -6,6 +6,7 @@ import bcrypt
 from flask import Flask, jsonify, request
 from functools import wraps
 from dotenv import load_dotenv  # Для загрузки переменных окружения из .env файла
+import base64
 
 # Если приложение запущено локально, а не в Railway — загружаем переменные из .env
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
