@@ -1126,7 +1126,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 
 
     # Создание директории для сохранения файлов, если не существует
-    upload_folder = 'datas/images'  # Путь к папке для хранения
+    upload_folder = 'static/images'  # Путь к папке для хранения
     os.makedirs(upload_folder, exist_ok=True)
 
     # Генерация уникального имени файла
