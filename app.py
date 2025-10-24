@@ -1126,7 +1126,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 
 
     # Создание директории для сохранения файлов, если не существует
-    upload_folder = 'static/images'  # Путь к папке для хранения
+    upload_folder = '/app/static/images'  # Путь к папке для хранения
     os.makedirs(upload_folder, exist_ok=True)
 
     # Генерация уникального имени файла
@@ -1179,6 +1179,13 @@ def save_image_to_file(product_code, subprod_code, image_id):
     return response, 200
 
 
+# Новый роут для публичного доступа к изображениям
+@app.route('/images/<path:filename>')  # /images/data/images/product_123.jpg
+def get_image(filename):
+    # Проверяем, чтобы избежать path traversal (безопасность)
+    if '..' in filename or filename.startswith('/'):
+        return "Forbidden", 403
+    return send_from_directory('/app/static/images', filename)  # Отдаёт из volume
 
 
 
