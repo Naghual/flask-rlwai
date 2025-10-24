@@ -1100,14 +1100,25 @@ def save_image_to_file(product_code, subprod_code, image_id):
         return {"error": f"Database error (fetching image): {str(e)}"}, 500
 
 
-    # Определение типа файла по содержимому изображения
+   # Определение типа файла по содержимому изображения
     try:
-        file_extension = imghdr.what(None, h=img_data)
+        # Если img_data — memoryview (PostgreSQL BYTEA), преобразуем в bytes
+        if isinstance(img_data, memoryview):
+            img_bytes = img_data.tobytes()
+        else:
+            img_bytes = img_data  # уже bytes (на всякий случай)
+
+        if not img_bytes:
+            raise ValueError("Image data is empty")
+
+        file_extension = imghdr.what(None, h=img_bytes)
         if file_extension is None:
-            file_extension = 'jpg'  # По умолчанию, если тип не определён
+            file_extension = 'jpg'  # По умолчанию
         file_extension = f".{file_extension}"
+
         if bDebug:
             print(f"    Detected file type: {file_extension}")
+            
     except Exception as e:
         cursor.close()
         conn.close()
