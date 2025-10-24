@@ -1118,7 +1118,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 
         if bDebug:
             print(f"    Detected file type: {file_extension}")
-            
+
     except Exception as e:
         cursor.close()
         conn.close()
@@ -1126,7 +1126,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 
 
     # Создание директории для сохранения файлов, если не существует
-    upload_folder = 'data/images'  # Путь к папке для хранения
+    upload_folder = 'datas/images'  # Путь к папке для хранения
     os.makedirs(upload_folder, exist_ok=True)
 
     # Генерация уникального имени файла
@@ -1140,8 +1140,8 @@ def save_image_to_file(product_code, subprod_code, image_id):
     try:
         with open(file_path, 'wb') as f:
             f.write(img_data)
-        if bDebug:
-            print(f"    Image saved to file: {file_path}")
+        #if bDebug:
+        print(f"    Image saved to file: {file_path}")
     except Exception as e:
         cursor.close()
         conn.close()
@@ -1150,7 +1150,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
     # Обновление поля image_path в таблице images
     try:
         cursor.execute(
-            "UPDATE public.images SET image_path = %s, img_data=None WHERE id = %s;",
+            "UPDATE public.images SET image_path = %s, img_data='' WHERE id = %s;",
             (file_path, image_id)
         )
         conn.commit()
