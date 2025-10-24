@@ -14,7 +14,7 @@ import base64
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
     load_dotenv()
 
-app = Flask(__name__)
+app = Flask(name)
 
 
 bDebug = True
@@ -110,7 +110,7 @@ def login():
         sql = """
             select usr.id, usr.login, usr.first_name, usr.last_name, usr.phone
             from customers usr
-            where 	usr.enabled = true 
+            where   usr.enabled = true 
                 and usr.login = %s 
                 and usr.phrase = %s"""
 
@@ -253,10 +253,10 @@ def get_categories():
         cur = conn.cursor()
         cur.execute("""
             SELECT 
-            	c.id, 
-            	c.code, 
-            	c.""" + col_title + """, 
-            	COUNT(p.id) as ProductCount
+              c.id, 
+              c.code, 
+              c.""" + col_title + """, 
+              COUNT(p.id) as ProductCount
             FROM 
                 Categories c
             LEFT JOIN 
@@ -350,7 +350,9 @@ def get_products():
                 p.""" + col_title + """ AS product_title,
                 p.""" + col_descr + """ AS product_descr,
                 COALESCE(pl.price, 0) AS price,
-                COALESCE(pl.stock_quantity, 0) AS quantity
+                COALESCE(pl.stock_quantity, 0) AS quantity,
+                p.code AS product_code,
+                p.is_variative as is_variative
             FROM products p
             LEFT JOIN categories c ON p.category_code = c.code
             LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s"""
@@ -402,15 +404,18 @@ def get_products():
         # Запихиваем результаты запроса в выходной массив
         products = []
         for row in rows:
-            products.append({
-                'id': row[0],
-                'category': row[1],
-                'title': row[2],
-                'description': row[3],
-                'image': '',
-                'measure': '',
-                'quantity': row[5],
-                'price': float(row[4])
+
+            str_image_path = get_image_filepath(row[6], None, None)
+            products.append(
+            {
+                'id'        : row[0],
+                'category'  : row[1],
+                'title'     : row[2],
+                'description':row[3],
+                'price'     : float(row[4]),
+                'quantity'  : row[5],
+                'image'     : str_image_path,
+                'measure'   : ''
             })
             if bDebug:
                 print('    product processed: ' + str(row[0]) + ' : ' + str(row[2]))
@@ -528,7 +533,6 @@ def get_product(product_id):
     if rows_count != 1:
         return jsonify({"records more than expected"}), 500  # Ошибка сервера
 
-    # 2
     # отримаємо зображення товару
     try:
         # Запит до БД
@@ -962,6 +966,72 @@ def create_order():
 
 
 
+
+
+
+# ==============================================================
+# --------------------------------------------------------------
+def get_image_filepath(product_code, subprod_code, image_id):
+    """
+    Процедура для получения пути к вайлу изображения из таблицы images.
+    Если путь не прописан - сохраняем файл на диск и прописываем.
+    Параметры:
+        product_code (str): Код основного товара.
+        subprod_code (str or None): Код вариативного товара, если есть.
+        image_id (int): ID изображения в таблице images.
+    Возвращает:
+        Строка - путь к файл или Пустая
+    """
+
+    if bDebug:
+        print(f'+++get_image_filepath: product_code={product_code}, subprod_code={subprod_code}, image_id={image_id}')
+
+    # Проверка на заполненность ID товара
+    if not product_code:
+        print(f"  * get_image_filepath error: No product code specified")
+        return ""
+
+    # Подключение к БД
+    try:
+        conn = get_db_connection()
+        conn.autocommit = False  # manual transactions
+        cursor = conn.cursor()
+    except Exception as e:
+        print(f"  * get_image_filepath error: Database connection error: {str(e)}")
+
+    
+    
+    # Получение пути изображения
+    try:
+        where_SP = ""
+        where_ID = ""
+        if subprod_code:
+            where_SP = " AND subprod_code = "+subprod_code;
+        if image_id:
+            where_ID = " AND id = "+image_id;
+
+        cursor.execute("SELECT image_path FROM public.images WHERE product_code = %s" + where_SP + where_ID + ";",  (product_code,) )
+        image_data = cursor.fetchone()
+        print(f"    image_data: {image_data}")
+        cursor.close()
+        conn.close()
+
+        image_path = image_data[0]
+
+        if image_path == '':
+            image_path = save_image_to_file(product_code, subprod_code, image_id)
+
+        return image_path
+
+
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        print(f"  * get_image_filepath error: Database error (fetching image): {str(e)}")
+        return ""
+    
+
+
 # ==============================================================
 # --------------------------------------------------------------
 def save_image_to_file(product_code, subprod_code, image_id):
@@ -1060,7 +1130,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
     # Обновление поля image_path в таблице images
     try:
         cursor.execute(
-            "UPDATE public.images SET image_path = %s WHERE id = %s;",
+            "UPDATE public.images SET image_path = %s, img_data=None WHERE id = %s;",
             (file_path, image_id)
         )
         conn.commit()
@@ -1096,7 +1166,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 # --------------------------------------------------------------
 # Запуск приложения (локально или на хостинге)
 
-if __name__ == "__main__":
+if name == "main":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))  # Слушаем все IP, порт по умолчанию — 5000
 
 # Дополнительные файлы в проекте:
@@ -1116,4 +1186,3 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
-
