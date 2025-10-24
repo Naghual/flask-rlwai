@@ -3,12 +3,13 @@ import psycopg2  # PostgreSQL
 import secrets
 import time
 import imghdr
-from datetime import datetime
 import bcrypt
-from flask import Flask, jsonify, request
+import base64
+from datetime import datetime
+from flask import Flask, jsonify, request, send_from_directory
 from functools import wraps
 from dotenv import load_dotenv  # Для загрузки переменных окружения из .env файла
-import base64
+
 
 # Если приложение запущено локально, а не в Railway — загружаем переменные из .env
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
