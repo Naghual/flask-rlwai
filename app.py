@@ -17,7 +17,7 @@ if os.environ.get("RAILWAY_ENVIRONMENT") is None:
 app = Flask(__name__)
 
 
-bDebug = True
+bDebug = False
 
 
 
@@ -1010,7 +1010,7 @@ def get_image_filepath(product_code, subprod_code, image_id):
         if image_id:
             where_ID = " AND id = "+image_id;
 
-        cursor.execute("SELECT id, image_path FROM public.images WHERE product_code = %s" + where_SP + where_ID + ";",  (product_code,) )
+        cursor.execute("SELECT id, COALESCE(image_path,'') FROM public.images WHERE product_code = %s" + where_SP + where_ID + ";",  (product_code,) )
         image_data = cursor.fetchone()
         
         cursor.close()
@@ -1070,11 +1070,13 @@ def save_image_to_file(product_code, subprod_code, image_id):
     # Проверка существования изображения
     try:
         if subprod_code:
+            print(f'    -save_image_to_file: SELECT img_data, product_code, subprod_code FROM public.images WHERE id = {image_id} AND product_code = {product_code} AND subprod_code = {subprod_code}')
             cursor.execute(
                 "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s AND subprod_code = %s;",
                 (image_id, product_code, subprod_code)
             )
         else:
+            print(f'    -save_image_to_file: SELECT img_data, product_code, subprod_code FROM public.images WHERE id = {image_id} AND product_code = {product_code}')
             cursor.execute(
                 "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s;",
                 (image_id, product_code)
