@@ -1010,7 +1010,7 @@ def get_image_filepath(product_code, subprod_code, image_id):
         if image_id:
             where_ID = " AND id = "+image_id;
 
-        cursor.execute("SELECT image_path FROM public.images WHERE product_code = %s" + where_SP + where_ID + ";",  (product_code,) )
+        cursor.execute("SELECT id, image_path FROM public.images WHERE product_code = %s" + where_SP + where_ID + ";",  (product_code,) )
         image_data = cursor.fetchone()
         
         cursor.close()
@@ -1019,11 +1019,14 @@ def get_image_filepath(product_code, subprod_code, image_id):
         image_path = ''
         if image_data:
             print(f"    image_data: {image_data}")
-            image_path = image_data[0]
+            image_id   = image_data[0]
+            image_path = image_data[1]
 
         
         if image_path == '':
+            print(f"  * get_image_filepath: call for save_image_to_file")
             image_path = save_image_to_file(product_code, subprod_code, image_id)
+            print(f"       -- recieved in return: {image_path}")
 
         return image_path
 
