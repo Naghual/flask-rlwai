@@ -2,6 +2,8 @@ import os
 import psycopg2  # PostgreSQL
 import secrets
 import time
+import imghdr
+from datetime import datetime
 import bcrypt
 from flask import Flask, jsonify, request
 from functools import wraps
@@ -959,6 +961,137 @@ def create_order():
         return jsonify({"error": str(e)}), 500
 
 
+
+# ==============================================================
+# --------------------------------------------------------------
+def save_image_to_file(product_code, subprod_code, image_id):
+    """
+    Процедура для сохранения изображения из таблицы images в файл на сервере.
+    Сохраняет изображение из BYTEA в файл и обновляет поле image_path в БД.
+    Параметры:
+        product_code (str): Код основного товара.
+        subprod_code (str or None): Код вариативного товара, если есть.
+        image_id (int): ID изображения в таблице images.
+    Возвращает:
+        dict: Ответ с информацией об успехе/ошибке.
+    """
+    if bDebug:
+        print(f'+++save_image_to_file: product_code={product_code}, subprod_code={subprod_code}, image_id={image_id}')
+
+    # Проверка на заполненность ID товара
+    if not product_code:
+        return {"error": "No product code specified"}, 400
+
+    # Подключение к БД
+    try:
+        conn = get_db_connection()
+        conn.autocommit = False  # manual transactions
+        cursor = conn.cursor()
+    except Exception as e:
+        return {"error": f"Database connection error: {str(e)}"}, 500
+
+    # Проверка существования изображения
+    try:
+        if subprod_code:
+            cursor.execute(
+                "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s AND subprod_code = %s;",
+                (image_id, product_code, subprod_code)
+            )
+        else:
+            cursor.execute(
+                "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s;",
+                (image_id, product_code)
+            )
+        
+        image_data = cursor.fetchone()
+        
+        if not image_data:
+            cursor.close()
+            conn.close()
+            return {"error": "Image not found"}, 404
+
+        img_data, db_prod_code, db_subprod_code = image_data
+
+        if bDebug:
+            print(f"    Image found: ID={image_id}, product_code={db_prod_code}, subprod_code={db_subprod_code}")
+
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        return {"error": f"Database error (fetching image): {str(e)}"}, 500
+
+
+    # Определение типа файла по содержимому изображения
+    try:
+        file_extension = imghdr.what(None, h=img_data)
+        if file_extension is None:
+            file_extension = 'jpg'  # По умолчанию, если тип не определён
+        file_extension = f".{file_extension}"
+        if bDebug:
+            print(f"    Detected file type: {file_extension}")
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        return {"error": f"Failed to determine image type: {str(e)}"}, 500
+
+
+    # Создание директории для сохранения файлов, если не существует
+    upload_folder = 'data/images'  # Путь к папке для хранения
+    os.makedirs(upload_folder, exist_ok=True)
+
+    # Генерация уникального имени файла
+    if subprod_code:
+        file_name = f"{product_code}_{subprod_code}_{image_id}{file_extension}"
+    else:
+        file_name = f"{product_code}_{image_id}{file_extension}"
+    file_path = os.path.join(upload_folder, file_name)
+
+    # Сохранение изображения в файл
+    try:
+        with open(file_path, 'wb') as f:
+            f.write(img_data)
+        if bDebug:
+            print(f"    Image saved to file: {file_path}")
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        return {"error": f"Failed to save image to file: {str(e)}"}, 500
+
+    # Обновление поля image_path в таблице images
+    try:
+        cursor.execute(
+            "UPDATE public.images SET image_path = %s WHERE id = %s;",
+            (file_path, image_id)
+        )
+        conn.commit()
+        if bDebug:
+            print(f"    Image path updated in DB: {file_path}")
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return {"error": f"Database error (updating path): {str(e)}"}, 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Формирование ответа
+    response = {
+        "message": "Image saved to file and path updated successfully",
+        "image_id": image_id,
+        "product_code": product_code,
+        "file_path": file_path
+    }
+    if subprod_code:
+        response["subprod_code"] = subprod_code
+
+    return response, 200
+
+
+
+
+
 # ==============================================================
 # --------------------------------------------------------------
 # Запуск приложения (локально или на хостинге)
@@ -983,3 +1116,4 @@ if __name__ == "__main__":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
+
