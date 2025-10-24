@@ -14,7 +14,7 @@ import base64
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
     load_dotenv()
 
-app = Flask(name)
+app = Flask(__name__)
 
 
 bDebug = True
@@ -1166,7 +1166,7 @@ def save_image_to_file(product_code, subprod_code, image_id):
 # --------------------------------------------------------------
 # Запуск приложения (локально или на хостинге)
 
-if name == "main":
+if __name__ == "main":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))  # Слушаем все IP, порт по умолчанию — 5000
 
 # Дополнительные файлы в проекте:
