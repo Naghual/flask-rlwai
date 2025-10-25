@@ -36,7 +36,7 @@ DEFAULT_LANG        = 'ua'
 DEFAULT_CURRENCY    = 'uah'
 DEFAULT_PAGE_LIMIT  = 50
 MAX_PAGE_LIMIT      = 250
-
+NO_IMAGE_MARKER     = "__NO_IMAGE__"  # Маркер: изображения нет и не нужно искать
 
 
 # ==============================================================
@@ -385,8 +385,8 @@ def get_products():
 
 
         # === Получение изображений одним запросом ===
-        product_codes = [row['product_code'] for row in rows]
-        image_map = _fetch_image_paths_bulk(product_codes)
+        items = [(row['product_code'], None) for row in rows]  # subprod_code = None
+        image_map = _fetch_image_paths_bulk(items)
 
 
        # === Формирование ответа ===
@@ -400,7 +400,7 @@ def get_products():
                 'description'   : row['product_descr'] or '',
                 'price'         : float(row['price']),
                 'quantity'      : int(row['quantity']),
-                'image'         : image_map.get(code, ''),
+                'image'         : image_map.get((code, None), ''),
                 'measure'       : '',
                 'is_variative'  : bool(row['is_variative'])
             })
@@ -1140,52 +1140,100 @@ def save_image_to_file(product_code, subprod_code, image_id):
 
 
 
-def _fetch_image_paths_bulk(product_codes: List[str]) -> Dict[str, str]:
+
+def _fetch_image_paths_bulk(
+    items: List[Tuple[str, Optional[str]]]
+) -> Dict[Tuple[str, Optional[str]], str]:
     """
-    Получает пути к изображениям для списка product_code одним запросом.
-    Возвращает dict: {product_code: image_path}
+    Получает пути к изображениям для списка [(product_code, subprod_code), ...]
+    Возвращает dict: {(product_code, subprod_code): image_path}
     """
-    if not product_codes:
+    if not items:
         return {}
 
+    # Уникальные пары (code, subprod_code)
+    unique_items = list(dict.fromkeys(items))  # сохраняем порядок, убираем дубли
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Используем IN с параметрами
-        placeholders = ','.join(['%s'] * len(product_codes))
+        # === 1. Запрос в БД по (product_code, subprod_code) ===
+        placeholders = ','.join(['(%s, %s)'] for _ in unique_items)
         query = f"""
-            SELECT product_code, COALESCE(image_path, '') AS image_path
+            SELECT product_code, subprod_code, image_path
             FROM public.images
-            WHERE product_code IN ({placeholders})
-              AND (subprod_code IS NULL OR subprod_code = '')
-              AND image_path IS NOT NULL
-            GROUP BY product_code, image_path  -- на случай дубликатов
+            WHERE (product_code, COALESCE(subprod_code, '')) IN ({placeholders})
         """
-        cur.execute(query, product_codes)
+        # Преобразуем None → '' для COALESCE
+        params = [code for code, sub in unique_items for code in [code, sub or '']]
+
+        cur.execute(query, params)
         rows = cur.fetchall()
 
-        # Формируем словарь
-        image_map = {row[0]: row[1] for row in rows}
+        image_map: Dict[Tuple[str, Optional[str]], str] = {}
+        missing_items: List[Tuple[str, Optional[str]]] = []
 
-        # Для отсутствующих — попробуем сохранить (опционально)
-        missing_codes = [code for code in product_codes if code not in image_map]
-        if missing_codes:
-            log.debug(f"Missing images for {len(missing_codes)} products, calling save_image_to_file")
-            for code in missing_codes:
-                path = save_image_to_file(code, None, None)
-                if path:
-                    image_map[code] = path
-                    # Опционально: обновить БД
+        # Нормализуем subprod_code: '' → None
+        for code, sub, path in rows:
+            key = (code, sub if sub else None)
+            if path == NO_IMAGE_MARKER:
+                image_map[key] = ''
+            else:
+                image_map[key] = path or ''
+
+        # Определяем, чего не хватает
+        missing_items = [item for item in unique_items if item not in image_map]
+
+        # === 2. Для отсутствующих — пытаемся сохранить ===
+        if missing_items:
+            log.debug(f"Missing image paths for {len(missing_items)} product variants")
+            for code, subprod_code in missing_items:
+                try:
+                    result = save_image_to_file(code, subprod_code, None)
+
+                    # === Нормализация результата ===
+                    if isinstance(result, dict):
+                        path = result.get('path', '') or ''
+                    elif isinstance(result, str):
+                        path = result
+                    else:
+                        path = ''
+
+                    key = (code, subprod_code)
+
+                    if path:
+                        image_map[key] = path
+                        # Сохраняем в БД
+                        cur.execute("""
+                            INSERT INTO public.images (product_code, subprod_code, image_path)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
+                            DO UPDATE SET image_path = EXCLUDED.image_path
+                        """, (code, subprod_code, path))
+                    else:
+                        # Не удалось — маркируем
+                        image_map[key] = ''
+                        cur.execute("""
+                            INSERT INTO public.images (product_code, subprod_code, image_path)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
+                            DO UPDATE SET image_path = EXCLUDED.image_path
+                        """, (code, subprod_code, NO_IMAGE_MARKER))
+
+                except Exception as e:
+                    log.warning(f"Failed to save image for {code}/{subprod_code}: {e}")
+                    key = (code, subprod_code)
+                    image_map[key] = ''
                     try:
-                        cur.execute(
-                            "INSERT INTO public.images (product_code, image_path) VALUES (%s, %s) "
-                            "ON CONFLICT (product_code) WHERE subprod_code IS NULL DO UPDATE SET image_path = EXCLUDED.image_path",
-                            (code, path)
-                        )
-                    except Exception as e:
-                        log.warning(f"Failed to cache image path for {code}: {e}")
+                        cur.execute("""
+                            INSERT INTO public.images (product_code, subprod_code, image_path)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
+                            DO UPDATE SET image_path = EXCLUDED.image_path
+                        """, (code, subprod_code, NO_IMAGE_MARKER))
+                    except Exception as db_e:
+                        log.warning(f"Failed to mark no-image for {code}/{subprod_code}: {db_e}")
 
         conn.commit()
         return image_map
@@ -1194,10 +1242,12 @@ def _fetch_image_paths_bulk(product_codes: List[str]) -> Dict[str, str]:
         log.error(f"Error in _fetch_image_paths_bulk: {e}", exc_info=True)
         if conn:
             conn.rollback()
-        return {}
+        # Возвращаем пустые строки для всех
+        return {item: '' for item in unique_items}
     finally:
         if conn:
             conn.close()
+
 
 
 
