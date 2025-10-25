@@ -385,8 +385,8 @@ def get_products():
 
 
         # === Получение изображений одним запросом ===
-        items = [(row['product_code'], None) for row in rows]  # subprod_code = None
-        image_map = _fetch_image_paths_bulk(items)
+        items_for_images = [(row['product_code'], None) for row in rows]  # subprod_code = None
+        image_map = _fetch_image_paths_bulk(items_for_images)
 
 
        # === Формирование ответа ===
@@ -1151,30 +1151,40 @@ def _fetch_image_paths_bulk(
     if not items:
         return {}
 
-    # Уникальные пары (code, subprod_code)
-    unique_items = list(dict.fromkeys(items))  # сохраняем порядок, убираем дубли
+    # Убираем дубли, сохраняя порядок
+    unique_items = []
+    seen = set()
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            unique_items.append(item)
+
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # === 1. Запрос в БД по (product_code, subprod_code) ===
-        placeholders = ','.join(['(%s, %s)'] for _ in unique_items)
+        # === 1. Формируем placeholders: (%s, %s), (%s, %s), ...
+        placeholders = ','.join('(%s, %s)' for _ in unique_items)
+
+        # === 2. Формируем параметры: code1, sub1, code2, sub2, ...
+        params = []
+        for code, sub in unique_items:
+            params.append(code)
+            params.append(sub or '')  # None → ''
+
         query = f"""
             SELECT product_code, subprod_code, image_path
             FROM public.images
             WHERE (product_code, COALESCE(subprod_code, '')) IN ({placeholders})
         """
-        # Преобразуем None → '' для COALESCE
-        params = [code for code, sub in unique_items for code in [code, sub or '']]
-
         cur.execute(query, params)
         rows = cur.fetchall()
 
         image_map: Dict[Tuple[str, Optional[str]], str] = {}
         missing_items: List[Tuple[str, Optional[str]]] = []
 
-        # Нормализуем subprod_code: '' → None
+        # === 3. Обрабатываем найденные записи ===
         for code, sub, path in rows:
             key = (code, sub if sub else None)
             if path == NO_IMAGE_MARKER:
@@ -1182,19 +1192,19 @@ def _fetch_image_paths_bulk(
             else:
                 image_map[key] = path or ''
 
-        # Определяем, чего не хватает
+        # === 4. Определяем отсутствующие ===
         missing_items = [item for item in unique_items if item not in image_map]
 
-        # === 2. Для отсутствующих — пытаемся сохранить ===
+        # === 5. Сохраняем недостающие изображения ===
         if missing_items:
             log.debug(f"Missing image paths for {len(missing_items)} product variants")
             for code, subprod_code in missing_items:
                 try:
                     result = save_image_to_file(code, subprod_code, None)
 
-                    # === Нормализация результата ===
+                    # Нормализация результата
                     if isinstance(result, dict):
-                        path = result.get('path', '') or ''
+                        path = result.get('path') or ''
                     elif isinstance(result, str):
                         path = result
                     else:
@@ -1204,7 +1214,6 @@ def _fetch_image_paths_bulk(
 
                     if path:
                         image_map[key] = path
-                        # Сохраняем в БД
                         cur.execute("""
                             INSERT INTO public.images (product_code, subprod_code, image_path)
                             VALUES (%s, %s, %s)
@@ -1212,7 +1221,6 @@ def _fetch_image_paths_bulk(
                             DO UPDATE SET image_path = EXCLUDED.image_path
                         """, (code, subprod_code, path))
                     else:
-                        # Не удалось — маркируем
                         image_map[key] = ''
                         cur.execute("""
                             INSERT INTO public.images (product_code, subprod_code, image_path)
@@ -1242,7 +1250,6 @@ def _fetch_image_paths_bulk(
         log.error(f"Error in _fetch_image_paths_bulk: {e}", exc_info=True)
         if conn:
             conn.rollback()
-        # Возвращаем пустые строки для всех
         return {item: '' for item in unique_items}
     finally:
         if conn:
