@@ -1,12 +1,17 @@
+# flask-rlwai
+
 import os
-import psycopg2  # PostgreSQL
+import psycopg2
 import secrets
 import time
 import imghdr
 import bcrypt
 import base64
-from datetime import datetime
+import logging
 from flask import Flask, jsonify, request, send_from_directory
+from psycopg2.extras import RealDictCursor
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional
 from functools import wraps
 from dotenv import load_dotenv  # Для загрузки переменных окружения из .env файла
 
@@ -17,8 +22,20 @@ if os.environ.get("RAILWAY_ENVIRONMENT") is None:
 
 app = Flask(__name__)
 
+# Настройка логирования (замена print)
+logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger(__name__)
 
 bDebug = False
+bDebug2= False
+
+# Доступні значення для мов та валют
+VALID_LANGS         = {'ua', 'pl', 'en', 'ru'}
+VALID_CURRENCIES    = {'uah', 'pln', 'usd', 'eur'}
+DEFAULT_LANG        = 'ua'
+DEFAULT_CURRENCY    = 'uah'
+DEFAULT_PAGE_LIMIT  = 50
+MAX_PAGE_LIMIT      = 250
 
 
 
@@ -31,6 +48,7 @@ bDebug = False
 TOKEN_TTL = 172800  # 48 годин
 # TOKENS["tokenstring"] = [user_id, user_login, user_name, token_expire_date]
 TOKENS = {}
+
 
 
 # ==============================================================
@@ -47,7 +65,6 @@ def get_db_connection():
 # ==============================================================
 # --------------------------------------------------------------
 # 🔐 Декоратор авторизації
-
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -72,9 +89,9 @@ def require_auth(f):
             del TOKENS[token]
             return jsonify({"error": "Token expired"}), 401
 
-        request.user_id = user_id
-        request.user_login = user_login
-        request.user_name = user_name
+        request.user_id     = user_id
+        request.user_login  = user_login
+        request.user_name   = user_name
 
         return f(*args, **kwargs)
 
@@ -86,8 +103,6 @@ def require_auth(f):
 @app.route('/login', methods=['POST'])
 def login():
 
-    bDebug = True
-
     if bDebug:
         print('+++ Login')
 
@@ -95,14 +110,14 @@ def login():
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
 
-    username = data.get("username")
-    password = data.get("password")
+    username = data.get('username', '').lower()
+    password = data.get('password', '').lower()
 
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
-    if bDebug:
-        print('    username:' + str(username) + '; password:' + str(password))
+    if bDebug2:
+        print(f'    username: {username}; password: {password}')
 
     try:
         conn = get_db_connection()
@@ -120,8 +135,8 @@ def login():
         row = cur.fetchone()
         rows_count = cur.rowcount
 
-        if bDebug:
-            print('    data fetched: ', row)
+        if bDebug2:
+            print(f'    data fetched: {row}')
 
         if rows_count == 1:
             token = secrets.token_hex(16)
@@ -130,6 +145,7 @@ def login():
             conn.close()
             if bDebug:
                 print('    TOKEN Result: ', TOKENS[token])
+            
             return jsonify(
                 {
                     "token" : token,
@@ -162,7 +178,7 @@ def login():
 @require_auth
 def get_languages():
 
-    print('+++/languages: user:'+str(request.user_id))
+    print(f'+++/languages: user: {str(request.user_id)}')
 
     try:
         conn = get_db_connection()
@@ -195,10 +211,9 @@ def get_languages():
 @require_auth
 def get_currencies():
 
-    print('+++/currencies: user:' + str(request.user_id))
+    print(f'+++/currencies: user: {str(request.user_id)}')
 
-    lang = request.args.get('lang', 'ua')
-    lang = lang.lower()
+    lang = request.args.get('lang', 'ua').lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
 
@@ -240,10 +255,9 @@ def get_categories():
     bDebug = True
 
     if bDebug:
-        print('+++ Get Categories: user:' + str(request.user_id))
+        print(f'+++ Get Categories: user: {str(request.user_id)}')
 
-    lang = request.args.get('lang', 'ua')
-    lang = lang.lower()
+    lang = request.args.get('lang', 'ua').lower()
     if lang not in ['ua', 'pl', 'en', 'ru']:
         lang = 'ua'
 
@@ -271,8 +285,8 @@ def get_categories():
         cur.close()
         conn.close()
 
-        if bDebug:
-            print('    data fetched: ' + str(rows_count) + ' rows')
+        if bDebug2:
+            print(f'    data fetched: {str(rows_count)} rows')
 
         datarows = [
             {"id": row[0], "code": row[1].strip(), "title": row[2], "prod_count": row[3]}
@@ -303,153 +317,112 @@ def get_categories():
 @require_auth
 def get_products():
 
-    if bDebug:
-        print('+++/products: user:' + str(request.user_id))
+    user_id = request.user_id
+    log.debug(f"+++/products: user: {user_id}")
 
-    # Получаем параметры запроса
-    # это именно GET-параметры - request.args.get(param name)
-    # как работать с POST описал в комментах в create_order()
-
-    req_start = request.args.get('start')
-    req_limit = request.args.get('limit')
-
-    req_category = request.args.get('category')
-    # category_type = type(req_category)
-
-    req_currency = request.args.get('currency', 'uah')
-    req_currency = req_currency.lower()
-    if req_currency == '':
-        req_currency = 'uah'
-
-    req_lang = request.args.get('lang', 'ua')
-    req_lang = req_lang.lower()
-    if req_lang not in ['ua', 'pl', 'en', 'ru']:
-        req_lang = 'ua'
-
-    if req_start is None:
-        req_start = 0
-
-    if req_limit is None:
-        req_limit = 40
-
-    if bDebug:
-        print('    start:'+str(req_start)+ '; limit:'+str(req_limit))
-        print('    category:' + str(req_category) + '; currency:' + req_currency + '; lang:' + req_lang)
-
-    col_title = 'title_' + req_lang
-    col_descr = 'descr_' + req_lang
-
+    # === Валидация и парсинг параметров ===
     try:
-        # Запрос к БД
-        conn = get_db_connection()
-        cur = conn.cursor()
+        req_start = max(0, int(request.args.get('start', 0)))
+        req_limit = min(MAX_PAGE_LIMIT, max(1, int(request.args.get('limit', DEFAULT_PAGE_LIMIT))))  # ограничим сверху
+    except ValueError:
+        return jsonify({"error": "Invalid start or limit"}), 400
+    
+    req_category = request.args.get('category', '').strip().lower()
+    if len(req_category) > 50:  # защита от слишком длинных строк
+        return jsonify({"error": "Category too long"}), 400
+    
+    req_currency = request.args.get('currency', DEFAULT_CURRENCY).lower()
+    if req_currency not in VALID_CURRENCIES:
+        req_currency = DEFAULT_CURRENCY
+    
+    req_lang = request.args.get('lang', DEFAULT_LANG).lower()
+    if req_lang not in VALID_LANGS:
+        req_lang = DEFAULT_LANG
+    
+    col_title = f"title_{req_lang}"
+    col_descr = f"descr_{req_lang}"
 
-        sql = """
+    log.debug(f"Params: start={req_start}, limit={req_limit}, category={req_category}, currency={req_currency}, lang={req_lang}")
+
+
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)  # возвращает dict
+
+        # -- важно: только активные в запросе
+        base_sql = f"""
             SELECT 
                 p.id AS product_id,
                 c.code AS category_name,
-                p.""" + col_title + """ AS product_title,
-                p.""" + col_descr + """ AS product_descr,
+                p.{col_title} AS product_title,
+                p.{col_descr} AS product_descr,
                 COALESCE(pl.price, 0) AS price,
                 COALESCE(pl.stock_quantity, 0) AS quantity,
                 p.code AS product_code,
-                p.is_variative as is_variative
+                p.is_variative
             FROM products p
             LEFT JOIN categories c ON p.category_code = c.code
-            LEFT JOIN price_list pl ON p.code = pl.product_code  AND pl.currency_code = %s"""
-
-        # Это параметризирванные запросы, защита от инъекций в SQL
-        # В тексте SQL ставишь параметры типа %s и кодом "params = [currency, lang]" запихиваешь их в список
-        # params = [currency, lang]
+            LEFT JOIN price_list pl ON p.code = pl.product_code AND pl.currency_code = %s
+            WHERE p.is_active = TRUE  
+        """
         params = [req_currency]
 
         if req_category:
-            # И добавляешь в список параметров SQL-запроса
+            base_sql += " AND c.code = %s"
             params.append(req_category)
 
-            if isinstance(req_category, str) == True:
-                sql += """
-                WHERE c.code = %s"""
-            else:
-                sql += """
-                WHERE c.id = %s"""
+        base_sql += f" ORDER BY c.code, p.{col_title} LIMIT %s OFFSET %s"
+        params.extend([req_limit, req_start])
 
-        sql += """
-            ORDER BY c.code, p.""" + col_title
-
-        if req_limit <= 0:
-            req_limit = 40
-        sql += """
-            LIMIT """ + str(req_limit)
-
-        if req_start > 0:
-            sql += """
-                OFFSET """ + str(req_start)
-
-        # При выполнении запроса либа проверит и подставит твои параметры запроса
-
-        #if bDebug:
-        #    print('    sql :')
-        #    print('' + sql)
-        #    print('  ')
-        #    print('    params :')
-        #    print('' + str(params))
-
-        cur.execute(sql, params)
+        
+        cur.execute(base_sql, params)
         rows = cur.fetchall()
-        rows_count = cur.rowcount
+        total_fetched = len(rows)
 
-        if bDebug:
-            print('    rows fetched: ' + str(rows_count))
+        log.debug(f"    Fetched {total_fetched} products from DB")
 
-        # Запихиваем результаты запроса в выходной массив
+
+        # === Получение изображений одним запросом ===
+        product_codes = [row['product_code'] for row in rows]
+        image_map = _fetch_image_paths_bulk(product_codes)
+
+
+       # === Формирование ответа ===
         products = []
         for row in rows:
-
-            str_image_path = get_image_filepath(row[6], None, None)
-            products.append(
-            {
-                'id'        : row[0],
-                'category'  : row[1],
-                'title'     : row[2],
-                'description':row[3],
-                'price'     : float(row[4]),
-                'quantity'  : row[5],
-                'image'     : str_image_path,
-                'measure'   : ''
+            code = row['product_code']
+            products.append({
+                'id'            : row['product_id'],
+                'category'      : row['category_name'] or '',
+                'title'         : row['product_title'] or '',
+                'description'   : row['product_descr'] or '',
+                'price'         : float(row['price']),
+                'quantity'      : int(row['quantity']),
+                'image'         : image_map.get(code, ''),
+                'measure'       : '',
+                'is_variative'  : bool(row['is_variative'])
             })
-            if bDebug:
-                print('    product processed: ' + str(row[0]) + ' : ' + str(row[2]))
 
-        # Дисконнект к БД
-        cur.close()
-        conn.close()
-
-        data = {
-            "currency": req_currency,
-            "count": rows_count,
-            "start": req_start,
-            "limit": req_limit,
-            "products": products
+        response = {
+            "currency"  : req_currency,
+            "count"     : total_fetched,
+            "start"     : req_start,
+            "limit"     : req_limit,
+            "products"  : products
         }
 
-        # Из массивов python делает массив JSON
-        # Если тебе нужно отдать ответ в виде {...}, то перед jsonify() можешь запихать его в структуру типа
-        # response = {
-        #     "result": "ok",
-        #     "products": products
-        # }
-        # return jsonify(response), 200
-
-        if products:
-            return jsonify(data), 200
-
-        return jsonify({"message": "No products found"})
-
+        return jsonify(response), 200
 
     except Exception as e:
-        print('!!! error: ' + str(e))
-        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+        log.error(f"Error in get_products: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if conn:
+            conn.close()
+    
+
 
 
 # --------------------------------------------------------------
@@ -468,12 +441,9 @@ def get_product(product_id):
 
     # бажана валюта, або євро
     req_currency = request.args.get('currency', 'uah').lower()
-    if req_currency == '':
-        req_currency = 'uah'
 
     # бажана мова, або Українська
-    req_lang = request.args.get('lang', 'ua')
-    req_lang = req_lang.lower()
+    req_lang = request.args.get('lang', 'ua').lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
     # відповідна назва колонок
@@ -602,16 +572,12 @@ def get_cart():
     # print('request.user_id : ', request.user_id)
 
     # бажана мова, або Українська
-    req_lang = request.args.get('lang', 'ua')
-    req_lang = req_lang.lower()
+    req_lang = request.args.get('lang', 'ua').lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
 
     # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'uah')
-    req_currency = req_currency.lower()
-    if req_currency == '':
-        req_currency = 'uah'
+    req_currency = request.args.get('currency', 'uah').lower()
 
     # відповідна назва колонок
     col_title = 'title_' + req_lang
@@ -704,16 +670,12 @@ def get_cart():
 @require_auth
 def get_orders():
     # бажана мова, або Українська
-    req_lang = request.args.get('lang', 'ua')
-    req_lang = req_lang.lower()
+    req_lang = request.args.get('lang', 'ua').lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
 
     # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'uah')
-    req_currency = req_currency.lower()
-    if req_currency == '':
-        req_currency = 'uah'
+    req_currency = request.args.get('currency', 'uah').lower()
 
     try:
         conn = get_db_connection()
@@ -769,8 +731,7 @@ def get_order(order_id):
         return jsonify({"message": "No product ID specified"}), 400
 
     # бажана мова, або Українська
-    req_lang = request.args.get('lang', 'ua')
-    req_lang = req_lang.lower()
+    req_lang = request.args.get('lang', 'ua').lower()
     if req_lang not in ['ua', 'pl', 'en', 'ru']:
         req_lang = 'ua'
 
@@ -778,10 +739,7 @@ def get_order(order_id):
 
 
     # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'uah')
-    req_currency = req_currency.lower()
-    if req_currency == '':
-        req_currency = 'uah'
+    req_currency = request.args.get('currency', 'uah').lower()
 
     try:
         conn = get_db_connection()
@@ -915,10 +873,11 @@ def create_order():
         order_total = 0
 
         for item in products:
-
-            product_id = item.get('id')
-            quantity = item.get('quantity')
-            # price       = item.get('price')
+            
+            product_id  = item.get('id')
+            quantity    = item.get('quantity')
+            # price     = item.get('price')
+            
             try:
                 cursor.execute("""
                 SELECT 
@@ -1180,6 +1139,68 @@ def save_image_to_file(product_code, subprod_code, image_id):
     return response, 200
 
 
+
+def _fetch_image_paths_bulk(product_codes: List[str]) -> Dict[str, str]:
+    """
+    Получает пути к изображениям для списка product_code одним запросом.
+    Возвращает dict: {product_code: image_path}
+    """
+    if not product_codes:
+        return {}
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Используем IN с параметрами
+        placeholders = ','.join(['%s'] * len(product_codes))
+        query = f"""
+            SELECT product_code, COALESCE(image_path, '') AS image_path
+            FROM public.images
+            WHERE product_code IN ({placeholders})
+              AND (subprod_code IS NULL OR subprod_code = '')
+              AND image_path IS NOT NULL
+            GROUP BY product_code, image_path  -- на случай дубликатов
+        """
+        cur.execute(query, product_codes)
+        rows = cur.fetchall()
+
+        # Формируем словарь
+        image_map = {row[0]: row[1] for row in rows}
+
+        # Для отсутствующих — попробуем сохранить (опционально)
+        missing_codes = [code for code in product_codes if code not in image_map]
+        if missing_codes:
+            log.debug(f"Missing images for {len(missing_codes)} products, calling save_image_to_file")
+            for code in missing_codes:
+                path = save_image_to_file(code, None, None)
+                if path:
+                    image_map[code] = path
+                    # Опционально: обновить БД
+                    try:
+                        cur.execute(
+                            "INSERT INTO public.images (product_code, image_path) VALUES (%s, %s) "
+                            "ON CONFLICT (product_code) WHERE subprod_code IS NULL DO UPDATE SET image_path = EXCLUDED.image_path",
+                            (code, path)
+                        )
+                    except Exception as e:
+                        log.warning(f"Failed to cache image path for {code}: {e}")
+
+        conn.commit()
+        return image_map
+
+    except Exception as e:
+        log.error(f"Error in _fetch_image_paths_bulk: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+
+
 # Новый роут для публичного доступа к изображениям
 @app.route('/images/<path:filename>')  # /images/data/images/product_123.jpg
 def get_image(filename):
@@ -1214,3 +1235,5 @@ if __name__ == "main":
 # Используется библиотекой python-dotenv для подгрузки переменных в локальной среде.
 # Позволяет удобно менять настройки (например, адрес БД) без правки кода.
 # Важно: .env добавляют в .gitignore, чтобы не загрузить секреты в публичный репозиторий.
+
+# flask-rlwai
