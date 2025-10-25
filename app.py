@@ -1001,142 +1001,125 @@ def get_image_filepath(product_code, subprod_code, image_id):
 
 # ==============================================================
 # --------------------------------------------------------------
-def save_image_to_file(product_code, subprod_code, image_id):
+def save_image_to_file(
+    product_code: str,
+    subprod_code: Optional[str] = None,
+    image_id: Optional[int] = None
+) -> str:
     """
-    Процедура для сохранения изображения из таблицы images в файл на сервере.
-    Сохраняет изображение из BYTEA в файл и обновляет поле image_path в БД.
-    Параметры:
-        product_code (str): Код основного товара.
-        subprod_code (str or None): Код вариативного товара, если есть.
-        image_id (int): ID изображения в таблице images.
-    Возвращает:
-        dict: Ответ с информацией об успехе/ошибке.
+    Выгружает изображение из BYTEA (таблица images) в файл на диск.
+    Обновляет image_path в БД.
+    Возвращает путь к файлу как строку или '' при ошибке.
     """
-    if bDebug:
-        print(f'+++save_image_to_file: product_code={product_code}, subprod_code={subprod_code}, image_id={image_id}')
-
-    # Проверка на заполненность ID товара
     if not product_code:
-        return {"error": "No product code specified"}, 400
+        log.warning("save_image_to_file: product_code is empty")
+        return ""
 
-    # Подключение к БД
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
-        conn.autocommit = False  # manual transactions
+        conn.autocommit = False
         cursor = conn.cursor()
-    except Exception as e:
-        return {"error": f"Database connection error: {str(e)}"}, 500
 
-    # Проверка существования изображения
-    try:
-        if subprod_code:
-            print(f'    -save_image_to_file: SELECT img_data, product_code, subprod_code FROM public.images WHERE id = {image_id} AND product_code = {product_code} AND subprod_code = {subprod_code}')
-            cursor.execute(
-                "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s AND subprod_code = %s;",
-                (image_id, product_code, subprod_code)
-            )
+        # === 1. Поиск изображения в БД ===
+        if image_id is not None:
+            # По ID (точный поиск)
+            if subprod_code:
+                cursor.execute("""
+                    SELECT img_data, image_path 
+                    FROM public.images 
+                    WHERE id = %s AND product_code = %s AND subprod_code = %s
+                """, (image_id, product_code, subprod_code))
+            else:
+                cursor.execute("""
+                    SELECT img_data, image_path 
+                    FROM public.images 
+                    WHERE id = %s AND product_code = %s AND (subprod_code IS NULL OR subprod_code = '')
+                """, (image_id, product_code))
         else:
-            print(f'    -save_image_to_file: SELECT img_data, product_code, subprod_code FROM public.images WHERE id = {image_id} AND product_code = {product_code}')
-            cursor.execute(
-                "SELECT img_data, product_code, subprod_code FROM public.images WHERE id = %s AND product_code = %s;",
-                (image_id, product_code)
-            )
-        
-        image_data = cursor.fetchone()
-        
-        if not image_data:
-            cursor.close()
-            conn.close()
-            return {"error": "Image not found"}, 404
+            # Без ID — ищем первое с img_data
+            if subprod_code:
+                cursor.execute("""
+                    SELECT img_data, image_path, id 
+                    FROM public.images 
+                    WHERE product_code = %s AND subprod_code = %s AND img_data IS NOT NULL
+                    ORDER BY id LIMIT 1
+                """, (product_code, subprod_code))
+            else:
+                cursor.execute("""
+                    SELECT img_data, image_path, id 
+                    FROM public.images 
+                    WHERE product_code = %s AND (subprod_code IS NULL OR subprod_code = '') AND img_data IS NOT NULL
+                    ORDER BY id LIMIT 1
+                """, (product_code,))
 
-        img_data, db_prod_code, db_subprod_code = image_data
+        row = cursor.fetchone()
+        if not row:
+            log.debug(f"save_image_to_file: no image data for {product_code}/{subprod_code}")
+            return ""
 
-        if bDebug:
-            print(f"    Image found: ID={image_id}, product_code={db_prod_code}, subprod_code={db_subprod_code}")
+        img_data, current_path, db_id = row if image_id is None else (row[0], row[1], image_id)
 
-    except Exception as e:
-        cursor.close()
-        conn.close()
-        return {"error": f"Database error (fetching image): {str(e)}"}, 500
+        # Если уже есть путь — возвращаем (избегаем повторной выгрузки)
+        if current_path and os.path.exists(current_path):
+            log.debug(f"Image already on disk: {current_path}")
+            return current_path
 
-
-   # Определение типа файла по содержимому изображения
-    try:
-        # Если img_data — memoryview (PostgreSQL BYTEA), преобразуем в bytes
+        # === 2. Определяем расширение ===
         if isinstance(img_data, memoryview):
             img_bytes = img_data.tobytes()
         else:
-            img_bytes = img_data  # уже bytes (на всякий случай)
+            img_bytes = bytes(img_data)
 
         if not img_bytes:
-            raise ValueError("Image data is empty")
+            log.warning("Image data is empty")
+            return ""
 
-        file_extension = imghdr.what(None, h=img_bytes)
-        if file_extension is None:
-            file_extension = 'jpg'  # По умолчанию
-        file_extension = f".{file_extension}"
+        file_ext = imghdr.what(None, h=img_bytes)
+        file_ext = f".{file_ext}" if file_ext else ".jpg"
 
-        if bDebug:
-            print(f"    Detected file type: {file_extension}")
+        # === 3. Формируем путь к файлу ===
+        upload_folder = "/app/static/images"
+        os.makedirs(upload_folder, exist_ok=True)
 
-    except Exception as e:
-        cursor.close()
-        conn.close()
-        return {"error": f"Failed to determine image type: {str(e)}"}, 500
+        suffix = f"_{subprod_code}" if subprod_code else ""
+        filename = f"{product_code}{suffix}_{db_id}{file_ext}"
+        file_path = os.path.join(upload_folder, filename)
 
-
-    # Создание директории для сохранения файлов, если не существует
-    upload_folder = '/app/static/images'  # Путь к папке для хранения
-    os.makedirs(upload_folder, exist_ok=True)
-
-    # Генерация уникального имени файла
-    if subprod_code:
-        file_name = f"{product_code}_{subprod_code}_{image_id}{file_extension}"
-    else:
-        file_name = f"{product_code}_{image_id}{file_extension}"
-    file_path = os.path.join(upload_folder, file_name)
-
-    # Сохранение изображения в файл
-    try:
+        # === 4. Сохраняем в файл ===
         with open(file_path, 'wb') as f:
-            f.write(img_data)
-        #if bDebug:
-        print(f"    Image saved to file: {file_path}")
-    except Exception as e:
-        cursor.close()
-        conn.close()
-        return {"error": f"Failed to save image to file: {str(e)}"}, 500
+            f.write(img_bytes)
 
-    # Обновление поля image_path в таблице images
-    try:
-        cursor.execute(
-            "UPDATE public.images SET image_path = %s, img_data='' WHERE id = %s;",
-            (file_path, image_id)
-        )
-        conn.commit()
-        if bDebug:
-            print(f"    Image path updated in DB: {file_path}")
-    except Exception as e:
-        conn.rollback()
-        cursor.close()
-        conn.close()
-        return {"error": f"Database error (updating path): {str(e)}"}, 500
+        # === 5. Обновляем БД: image_path = путь, img_data = NULL (если разрешено) ===
+        try:
+            cursor.execute("""
+                UPDATE public.images 
+                SET image_path = %s, img_data = NULL 
+                WHERE id = %s
+            """, (file_path, db_id))
+            conn.commit()
+            log.debug(f"Image saved and DB updated: {file_path}")
+            return file_path
+        except Exception as db_e:
+            conn.rollback()
+            log.warning(f"Failed to update image_path for id={db_id}: {db_e}")
+            # Возвращаем путь — файл уже на диске
+            return file_path
 
+    except Exception as e:
+        log.warning(f"save_image_to_file failed for {product_code}/{subprod_code}: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
+        return ""
     finally:
-        cursor.close()
-        conn.close()
-
-    # Формирование ответа
-    response = {
-        "message": "Image saved to file and path updated successfully",
-        "image_id": image_id,
-        "product_code": product_code,
-        "file_path": file_path
-    }
-    if subprod_code:
-        response["subprod_code"] = subprod_code
-
-    return response, 200
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 
@@ -1200,15 +1183,7 @@ def _fetch_image_paths_bulk(
             log.debug(f"Missing image paths for {len(missing_items)} product variants")
             for code, subprod_code in missing_items:
                 try:
-                    result = save_image_to_file(code, subprod_code, None)
-
-                    # Нормализация результата
-                    if isinstance(result, dict):
-                        path = result.get('path') or ''
-                    elif isinstance(result, str):
-                        path = result
-                    else:
-                        path = ''
+                    path = save_image_to_file(code, subprod_code)  # ← image_id=None
 
                     key = (code, subprod_code)
 
