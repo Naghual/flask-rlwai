@@ -480,14 +480,13 @@ def get_product(product_str: str):
     col_title = f"title_{req_lang}"
     col_descr = f"descr_{req_lang}"
 
-    # === 3. Основной запрос: товар + вариация (если есть) ===
+    # === 3. Запрос товара (только по product_id) ===
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Базовый запрос по продукту
-        base_sql = f"""
+        sql = f"""
             SELECT 
                 p.id,
                 p.code AS product_code,
@@ -504,60 +503,42 @@ def get_product(product_str: str):
             LEFT JOIN price_list pl ON p.code = pl.product_code AND pl.currency_code = %s
             WHERE p.id = %s AND p.is_active = TRUE
         """
-        params = [req_currency, product_id]
-
-        # Если есть subprod_code — ищем вариацию
-        if subprod_code:
-            base_sql = f"""
-                SELECT 
-                    v.id AS variant_id,
-                    p.id AS product_id,
-                    p.code AS product_code,
-                    c.id AS category_id,
-                    c.code AS category,
-                    p.is_active,
-                    p.{col_title} AS title,
-                    p.{col_descr} AS description,
-                    v.updated_at,
-                    COALESCE(pl.price, 0) AS price,
-                    COALESCE(pl.stock_quantity, 0) AS quantity
-                FROM product_variants v
-                JOIN products p ON v.product_id = p.id
-                LEFT JOIN categories c ON p.category_code = c.code
-                LEFT JOIN price_list pl ON v.code = pl.product_code AND pl.currency_code = %s
-                WHERE v.product_id = %s AND v.code = %s AND p.is_active = TRUE
-            """
-            params = [req_currency, product_id, subprod_code]
-
-        cur.execute(base_sql, params)
+        cur.execute(sql, (req_currency, product_id))
         row = cur.fetchone()
 
         if not row:
             return jsonify({"error": "Product not found"}), 404
 
-        # === 4. Получаем код для изображений ===
-        image_key = (row['product_code'], subprod_code)
+        product_code = row['product_code']
 
-        # === 5. Изображения через _fetch_image_paths_bulk ===
-        image_map = _fetch_image_paths_bulk([image_key])
-        main_image = image_map.get(image_key, '')
+        # === 4. Изображения через _fetch_image_paths_bulk ===
+        # Определяем, какое изображение главное
+        main_key = (product_code, subprod_code)  # приоритет: subprod_code
+        fallback_key = (product_code, None)
 
-        # === 6. Дополнительные изображения (все по product_code) ===
-        all_images_items = [(row['product_code'], None)]
+        # Запрашиваем оба (или один)
+        image_keys = [main_key]
         if subprod_code:
-            all_images_items.append((row['product_code'], subprod_code))
+            image_keys.append(fallback_key)  # если нет по subprod_code → по основному
 
-        all_images_map = _fetch_image_paths_bulk(all_images_items)
-        additional_images = [
-            path for key, path in all_images_map.items()
-            if path and key != image_key
-        ]
+        image_map = _fetch_image_paths_bulk(image_keys)
 
-        # === 7. Формируем ответ ===
+        # Главное изображение
+        main_image = image_map.get(main_key) or image_map.get(fallback_key, '')
+
+        # Все изображения (основные + вариативные)
+        all_images = []
+        # Основное
+        if image_map.get(fallback_key):
+            all_images.append(image_map[fallback_key])
+        # Вариативное (если есть)
+        if subprod_code and image_map.get(main_key):
+            all_images.append(image_map[main_key])
+
+        # === 5. Формируем ответ ===
         response = {
-            "id": row.get('variant_id') or row['id'],
-            "product_id": row['id'] if 'variant_id' in row else row['id'],
-            "product_code": row['product_code'],
+            "id": row['id'],
+            "product_code": product_code,
             "category_id": row['category_id'],
             "category": row['category'],
             "active": row['is_active'],
@@ -566,7 +547,7 @@ def get_product(product_str: str):
             "price": float(row['price']),
             "quantity": int(row['quantity']),
             "image": main_image,
-            "images": [main_image] + additional_images,
+            "images": all_images,
             "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
         }
 
