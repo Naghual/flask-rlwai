@@ -20,8 +20,6 @@ from dotenv import load_dotenv  # Для загрузки переменных �
 if os.environ.get("RAILWAY_ENVIRONMENT") is None:
     load_dotenv()
 
-app = Flask(__name__)
-
 # Настройка логирования (замена print)
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
@@ -29,7 +27,7 @@ log = logging.getLogger(__name__)
 bDebug = False
 bDebug2= False
 
-# Доступні значення для мов та валют
+# === Константи ===
 VALID_LANGS         = {'ua', 'pl', 'en', 'ru'}
 VALID_CURRENCIES    = {'uah', 'pln', 'usd', 'eur'}
 DEFAULT_LANG        = 'ua'
@@ -37,6 +35,18 @@ DEFAULT_CURRENCY    = 'uah'
 DEFAULT_PAGE_LIMIT  = 50
 MAX_PAGE_LIMIT      = 250
 NO_IMAGE_MARKER     = "__NO_IMAGE__"  # Маркер: изображения нет и не нужно искать
+UPLOAD_FOLDER       = "/app/static/images"
+
+# === Типи ===
+ImageKey        = Tuple[str, Optional[str]]  # (product_code, subprod_code)
+ImagePathMap    = Dict[ImageKey, str]
+
+
+app = Flask(__name__)
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
 
 
 # ==============================================================
@@ -385,9 +395,9 @@ def get_products():
 
 
         # === Получение изображений одним запросом ===
-        items_for_images = [(row['product_code'], None) for row in rows]  # subprod_code = None
-        image_map = _fetch_image_paths_bulk(items_for_images)
-
+        items = [(row['product_code'], None) for row in rows]  # subprod_code = None
+        image_map = _fetch_image_paths_bulk(items)
+        
 
        # === Формирование ответа ===
         products = []
@@ -427,140 +437,151 @@ def get_products():
 
 # --------------------------------------------------------------
 # 📦 Запит конкретного товару
-@app.route('/products/<int:product_id>', methods=['GET'])
-@require_auth
-def get_product(product_id):
-    
-    if bDebug:
-        print('+++/products: user:' + str(request.user_id) + ' ; product_id:' + str(product_id))
-    
-    # перевірка на заповненність АйДи товару
-    # product_id = request.args.get('product_id', 0)
-    if product_id == 0:
-        return jsonify({"message": "No product ID specified"}), 400
+def _parse_product_str(product_str: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Разбирает строку вида "123" или "123|VAR001"
+    Возвращает (product_id, subprod_code)
+    """
+    if not product_str:
+        return None, None
 
-    # бажана валюта, або євро
-    req_currency = request.args.get('currency', 'uah').lower()
-
-    # бажана мова, або Українська
-    req_lang = request.args.get('lang', 'ua').lower()
-    if req_lang not in ['ua', 'pl', 'en', 'ru']:
-        req_lang = 'ua'
-    # відповідна назва колонок
-    col_title = 'title_' + req_lang
-    col_descr = 'descr_' + req_lang
-
-
-    if bDebug:
-        print('    currency:' + req_currency + '; lang:' + req_lang)
-
-    # 1
-    # отримаємо данні про товар
+    parts = product_str.strip().split('|', 1)
     try:
-        # Запит до БД
+        product_id = int(parts[0])
+    except ValueError:
+        return None, None
+
+    subprod_code = parts[1] if len(parts) > 1 and parts[1].strip() else None
+    return product_id, subprod_code
+
+
+@app.route('/products/<string:product_str>', methods=['GET'])
+@require_auth
+def get_product(product_str: str):
+    user_id = request.user_id
+    log.debug(f"+++/products/{product_str}: user: {user_id}")
+
+    # === 1. Парсинг product_str ===
+    product_id, subprod_code = _parse_product_str(product_str)
+    if product_id is None:
+        return jsonify({"error": "Invalid product identifier"}), 400
+
+    log.debug(f"Parsed: product_id={product_id}, subprod_code={subprod_code}")
+
+    # === 2. Валидация параметров ===
+    req_currency = request.args.get('currency', DEFAULT_CURRENCY).lower()
+    if req_currency not in VALID_CURRENCIES:
+        req_currency = DEFAULT_CURRENCY
+
+    req_lang = request.args.get('lang', DEFAULT_LANG).lower()
+    if req_lang not in VALID_LANGS:
+        req_lang = DEFAULT_LANG
+
+    col_title = f"title_{req_lang}"
+    col_descr = f"descr_{req_lang}"
+
+    # === 3. Основной запрос: товар + вариация (если есть) ===
+    conn = None
+    try:
         conn = get_db_connection()
-        cur = conn.cursor()
-        sql = """
-            select 
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Базовый запрос по продукту
+        base_sql = f"""
+            SELECT 
                 p.id,
-                p.code,
+                p.code AS product_code,
                 c.id AS category_id,
                 c.code AS category,
-                p.is_active AS active,
-                p.""" + col_title + """ AS title,
-                p.""" + col_descr + """ AS description,
+                p.is_active,
+                p.{col_title} AS title,
+                p.{col_descr} AS description,
                 p.updated_at,
                 COALESCE(pl.price, 0) AS price,
-                COALESCE(pl.stock_quantity, 0) AS quantity, 
-                COALESCE(ENCODE(i.img_data, 'base64'), '') AS img_data 
-            FROM Products p
+                COALESCE(pl.stock_quantity, 0) AS quantity
+            FROM products p
             LEFT JOIN categories c ON p.category_code = c.code
-            LEFT JOIN price_list pl ON pl.product_code = p.code AND pl.currency_code = %s
-            LEFT JOIN images i ON i.product_code = p.code
-            WHERE p.id = %s"""
+            LEFT JOIN price_list pl ON p.code = pl.product_code AND pl.currency_code = %s
+            WHERE p.id = %s AND p.is_active = TRUE
+        """
+        params = [req_currency, product_id]
 
-        cur.execute(sql, (req_currency, product_id))
-        rows = cur.fetchall()
-        rows_count = cur.rowcount
+        # Если есть subprod_code — ищем вариацию
+        if subprod_code:
+            base_sql = f"""
+                SELECT 
+                    v.id AS variant_id,
+                    p.id AS product_id,
+                    p.code AS product_code,
+                    c.id AS category_id,
+                    c.code AS category,
+                    p.is_active,
+                    p.{col_title} AS title,
+                    p.{col_descr} AS description,
+                    v.updated_at,
+                    COALESCE(pl.price, 0) AS price,
+                    COALESCE(pl.stock_quantity, 0) AS quantity
+                FROM product_variants v
+                JOIN products p ON v.product_id = p.id
+                LEFT JOIN categories c ON p.category_code = c.code
+                LEFT JOIN price_list pl ON v.code = pl.product_code AND pl.currency_code = %s
+                WHERE v.product_id = %s AND v.code = %s AND p.is_active = TRUE
+            """
+            params = [req_currency, product_id, subprod_code]
 
-        product_code = rows[0][1]
-        category_id  = rows[0][2]
+        cur.execute(base_sql, params)
+        row = cur.fetchone()
 
-        # Дисконнект від БД
-        cur.close()
-        conn.close()
-        
-        if bDebug:
-            print('    rows fetched: ' + str(rows_count))
+        if not row:
+            return jsonify({"error": "Product not found"}), 404
 
-    except Exception as e:
-        print('!!! error1: ' + str(e))
-        return jsonify({"error (1): ": str(e)}), 500  # Ошибка сервера
+        # === 4. Получаем код для изображений ===
+        image_key = (row['product_code'], subprod_code)
 
-    # має бути лише один!
-    if rows_count == 0:
-        return jsonify({"no records found"}), 404  # Ошибка сервера
+        # === 5. Изображения через _fetch_image_paths_bulk ===
+        image_map = _fetch_image_paths_bulk([image_key])
+        main_image = image_map.get(image_key, '')
 
-    if rows_count != 1:
-        return jsonify({"records more than expected"}), 500  # Ошибка сервера
+        # === 6. Дополнительные изображения (все по product_code) ===
+        all_images_items = [(row['product_code'], None)]
+        if subprod_code:
+            all_images_items.append((row['product_code'], subprod_code))
 
-    # отримаємо зображення товару
-    try:
-        # Запит до БД
-        conn = get_db_connection()
-        cur = conn.cursor()
-        sql = """
-            SELECT 
-                ENCODE(i.img_data, 'base64') AS img_data 
-            FROM images i
-            WHERE i.product_code = %s
-            ORDER BY i.id"""
+        all_images_map = _fetch_image_paths_bulk(all_images_items)
+        additional_images = [
+            path for key, path in all_images_map.items()
+            if path and key != image_key
+        ]
 
-        cur.execute(sql, (product_code,))
-        img_rows = cur.fetchall()
-        # img_count = cur.rowcount
-
-        # Дисконнект від БД
-        cur.close()
-        conn.close()
-
-    except Exception as e:
-        print('!!! error2: ' + str(e))
-        return jsonify({"error (2): ": str(e)}), 500  # Ошибка сервера
-
-    try:
-
-        # Заносимо зображення у масив
-        images = []
-        for row in img_rows:
-            images.append({'image': row[0] or ''})
-        if bDebug:
-            print('    images appended.')
-
-        # Заносимо данні
-        first_row = rows[0]
-        data = {
-            "id": first_row[0],
-            "category_id": first_row[2],
-            "category": first_row[3],
-            "active": first_row[4],
-            "title": first_row[5],
-            "description": first_row[6],
-            "image": first_row[10],  # Уже закодировано в base64
-            "quantity": first_row[9],
-            "price": first_row[8],
-            "images": images
+        # === 7. Формируем ответ ===
+        response = {
+            "id": row.get('variant_id') or row['id'],
+            "product_id": row['id'] if 'variant_id' in row else row['id'],
+            "product_code": row['product_code'],
+            "category_id": row['category_id'],
+            "category": row['category'],
+            "active": row['is_active'],
+            "title": row['title'] or '',
+            "description": row['description'] or '',
+            "price": float(row['price']),
+            "quantity": int(row['quantity']),
+            "image": main_image,
+            "images": [main_image] + additional_images,
+            "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
         }
-        
-        if bDebug:
-            print('    data packed.')
 
-        return jsonify(data), 200
+        if subprod_code:
+            response["subprod_code"] = subprod_code
 
+        return jsonify(response), 200
 
     except Exception as e:
-        print('!!! error3: ' + str(e))
-        return jsonify({"error (3): ": str(e)}), 500  # Ошибка сервера
+        log.error(f"Error in get_product: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if conn:
+            conn.close()
+    
 
 
 # ==============================================================
@@ -1001,235 +1022,164 @@ def get_image_filepath(product_code, subprod_code, image_id):
 
 # ==============================================================
 # --------------------------------------------------------------
-def save_image_to_file(
-    product_code: str,
-    subprod_code: Optional[str] = None,
-    image_id: Optional[int] = None
-) -> str:
+def save_image_to_file( product_code: str,   subprod_code: Optional[str],   image_id: int,   img_data: bytes ) -> str:
     """
-    Выгружает изображение из BYTEA (таблица images) в файл на диск.
-    Обновляет image_path в БД.
-    Возвращает путь к файлу как строку или '' при ошибке.
+    Сохраняет BYTEA в файл и обновляет image_path в БД.
+    Возвращает путь к файлу или ''.
     """
-    if not product_code:
-        log.warning("save_image_to_file: product_code is empty")
-        return ""
 
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        conn.autocommit = False
-        cursor = conn.cursor()
-
-        # === 1. Поиск изображения в БД ===
-        if image_id is not None:
-            # По ID (точный поиск)
-            if subprod_code:
-                cursor.execute("""
-                    SELECT img_data, image_path 
-                    FROM public.images 
-                    WHERE id = %s AND product_code = %s AND subprod_code = %s
-                """, (image_id, product_code, subprod_code))
-            else:
-                cursor.execute("""
-                    SELECT img_data, image_path 
-                    FROM public.images 
-                    WHERE id = %s AND product_code = %s AND (subprod_code IS NULL OR subprod_code = '')
-                """, (image_id, product_code))
-        else:
-            # Без ID — ищем первое с img_data
-            if subprod_code:
-                cursor.execute("""
-                    SELECT img_data, image_path, id 
-                    FROM public.images 
-                    WHERE product_code = %s AND subprod_code = %s AND img_data IS NOT NULL
-                    ORDER BY id LIMIT 1
-                """, (product_code, subprod_code))
-            else:
-                cursor.execute("""
-                    SELECT img_data, image_path, id 
-                    FROM public.images 
-                    WHERE product_code = %s AND (subprod_code IS NULL OR subprod_code = '') AND img_data IS NOT NULL
-                    ORDER BY id LIMIT 1
-                """, (product_code,))
-
-        row = cursor.fetchone()
-        if not row:
-            log.debug(f"save_image_to_file: no image data for {product_code}/{subprod_code}")
-            return ""
-
-        img_data, current_path, db_id = row if image_id is None else (row[0], row[1], image_id)
-
-        # Если уже есть путь — возвращаем (избегаем повторной выгрузки)
-        if current_path and os.path.exists(current_path):
-            log.debug(f"Image already on disk: {current_path}")
-            return current_path
-
-        # === 2. Определяем расширение ===
-        if isinstance(img_data, memoryview):
-            img_bytes = img_data.tobytes()
-        else:
-            img_bytes = bytes(img_data)
-
-        if not img_bytes:
-            log.warning("Image data is empty")
-            return ""
-
-        file_ext = imghdr.what(None, h=img_bytes)
+        # --- 1. Определяем расширение ---
+        file_ext = imghdr.what(None, h=img_data)
         file_ext = f".{file_ext}" if file_ext else ".jpg"
 
-        # === 3. Формируем путь к файлу ===
-        upload_folder = "/app/static/images"
-        os.makedirs(upload_folder, exist_ok=True)
-
+        # --- 2. Формируем путь ---
         suffix = f"_{subprod_code}" if subprod_code else ""
-        filename = f"{product_code}{suffix}_{db_id}{file_ext}"
-        file_path = os.path.join(upload_folder, filename)
+        filename = f"{product_code}{suffix}_{image_id}{file_ext}"
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
 
-        # === 4. Сохраняем в файл ===
-        with open(file_path, 'wb') as f:
-            f.write(img_bytes)
+        # --- 3. Сохраняем на диск ---
+        with open(file_path, "wb") as f:
+            f.write(img_data)
 
-        # === 5. Обновляем БД: image_path = путь, img_data = NULL (если разрешено) ===
+        # --- 4. Обновляем БД ---
+        conn = get_db_connection()
         try:
-            cursor.execute("""
-                UPDATE public.images 
-                SET image_path = %s, img_data = NULL 
-                WHERE id = %s
-            """, (file_path, db_id))
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE public.images
+                    SET image_path = %s, img_data = NULL
+                    WHERE id = %s
+                """, (file_path, image_id))
             conn.commit()
-            log.debug(f"Image saved and DB updated: {file_path}")
-            return file_path
-        except Exception as db_e:
+        except Exception as e:
             conn.rollback()
-            log.warning(f"Failed to update image_path for id={db_id}: {db_e}")
-            # Возвращаем путь — файл уже на диске
-            return file_path
-
-    except Exception as e:
-        log.warning(f"save_image_to_file failed for {product_code}/{subprod_code}: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except:
-                pass
-        return ""
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
+            log.warning(f"DB update failed for image {image_id}: {e}")
+        finally:
             conn.close()
 
+        log.debug(f"Image saved: {file_path}")
+        return file_path
+
+    except Exception as e:
+        log.warning(f"Failed to save image {product_code}/{subprod_code} (id={image_id}): {e}")
+        return ""
 
 
 
-def _fetch_image_paths_bulk(
-    items: List[Tuple[str, Optional[str]]]
-) -> Dict[Tuple[str, Optional[str]], str]:
+
+def _fetch_image_paths_bulk(  items: List[ImageKey]  ) -> ImagePathMap:
     """
-    Получает пути к изображениям для списка [(product_code, subprod_code), ...]
-    Возвращает dict: {(product_code, subprod_code): image_path}
+    Возвращает пути к изображениям для списка [(product_code, subprod_code), ...].
+    Сортирует по is_primary DESC.
     """
+
     if not items:
         return {}
 
-    # Убираем дубли, сохраняя порядок
-    unique_items = []
-    seen = set()
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            unique_items.append(item)
-
+    # Убираем дубли
+    unique_items = list(dict.fromkeys(items))
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
+        with conn.cursor() as cur:
 
-        # === 1. Формируем placeholders: (%s, %s), (%s, %s), ...
-        placeholders = ','.join('(%s, %s)' for _ in unique_items)
+            # --- 1. Формируем запрос: только нужные + с img_data или без пути ---
+            placeholders = ','.join('(%s, %s)' for _ in unique_items)
+            params = [code for code, sub in unique_items for code in [code, sub or '']]
 
-        # === 2. Формируем параметры: code1, sub1, code2, sub2, ...
-        params = []
-        for code, sub in unique_items:
-            params.append(code)
-            params.append(sub or '')  # None → ''
+            query = f"""
+                SELECT 
+                    product_code,
+                    subprod_code,
+                    image_path,
+                    img_data,
+                    id,
+                    is_primary
+                FROM public.images
+                WHERE (product_code, COALESCE(subprod_code, '')) IN ({placeholders})
+                  AND (
+                    image_path IS NULL OR image_path = '' OR image_path = %s
+                  )
+                ORDER BY is_primary DESC, id
+            """
+            cur.execute(query, params + [NO_IMAGE_MARKER])
+            rows = cur.fetchall()
 
-        query = f"""
-            SELECT product_code, subprod_code, image_path
-            FROM public.images
-            WHERE (product_code, COALESCE(subprod_code, '')) IN ({placeholders})
-        """
-        cur.execute(query, params)
-        rows = cur.fetchall()
+        # --- 2. Обрабатываем результаты ---
+        result_map: ImagePathMap = {}
+        to_save = []  # (id, code, sub, img_data)
 
-        image_map: Dict[Tuple[str, Optional[str]], str] = {}
-        missing_items: List[Tuple[str, Optional[str]]] = []
+        for code, sub, path, img_data, img_id, is_primary in rows:
+            key: ImageKey = (code, sub if sub else None)
 
-        # === 3. Обрабатываем найденные записи ===
-        for code, sub, path in rows:
-            key = (code, sub if sub else None)
-            if path == NO_IMAGE_MARKER:
-                image_map[key] = ''
+            # Если путь уже есть и не маркер — используем
+            if path and path != NO_IMAGE_MARKER and os.path.exists(path):
+                result_map[key] = path
+                continue
+
+            # Если есть img_data — нужно сохранить
+            if img_data:
+                if isinstance(img_data, memoryview):
+                    img_data = img_data.tobytes()
+                to_save.append((img_id, code, sub if sub else None, img_data))
             else:
-                image_map[key] = path or ''
+                # Нет данных и нет пути → маркер
+                result_map[key] = ''
+                _mark_no_image(conn, img_id)
 
-        # === 4. Определяем отсутствующие ===
-        missing_items = [item for item in unique_items if item not in image_map]
+        # --- 3. Сохраняем изображения ---
+        for img_id, code, sub, img_data in to_save:
+            key: ImageKey = (code, sub)
+            saved_path = save_image_to_file(code, sub, img_id, img_data)
+            result_map[key] = saved_path or ''
 
-        # === 5. Сохраняем недостающие изображения ===
-        if missing_items:
-            log.debug(f"Missing image paths for {len(missing_items)} product variants")
-            for code, subprod_code in missing_items:
-                try:
-                    path = save_image_to_file(code, subprod_code)  # ← image_id=None
+        # --- 4. Для остальных — возвращаем '' (и маркер в БД) ---
+        for code, sub in unique_items:
+            key: ImageKey = (code, sub)
+            if key not in result_map:
+                result_map[key] = ''
+                # Найдём id и пометим
+                img_id = _get_image_id(conn, code, sub)
+                if img_id:
+                    _mark_no_image(conn, img_id)
 
-                    key = (code, subprod_code)
-
-                    if path:
-                        image_map[key] = path
-                        cur.execute("""
-                            INSERT INTO public.images (product_code, subprod_code, image_path)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
-                            DO UPDATE SET image_path = EXCLUDED.image_path
-                        """, (code, subprod_code, path))
-                    else:
-                        image_map[key] = ''
-                        cur.execute("""
-                            INSERT INTO public.images (product_code, subprod_code, image_path)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
-                            DO UPDATE SET image_path = EXCLUDED.image_path
-                        """, (code, subprod_code, NO_IMAGE_MARKER))
-
-                except Exception as e:
-                    log.warning(f"Failed to save image for {code}/{subprod_code}: {e}")
-                    key = (code, subprod_code)
-                    image_map[key] = ''
-                    try:
-                        cur.execute("""
-                            INSERT INTO public.images (product_code, subprod_code, image_path)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT (product_code, COALESCE(subprod_code, ''))
-                            DO UPDATE SET image_path = EXCLUDED.image_path
-                        """, (code, subprod_code, NO_IMAGE_MARKER))
-                    except Exception as db_e:
-                        log.warning(f"Failed to mark no-image for {code}/{subprod_code}: {db_e}")
-
-        conn.commit()
-        return image_map
+        return result_map
 
     except Exception as e:
-        log.error(f"Error in _fetch_image_paths_bulk: {e}", exc_info=True)
-        if conn:
-            conn.rollback()
+        log.error(f"_fetch_image_paths_bulk error: {e}", exc_info=True)
         return {item: '' for item in unique_items}
     finally:
         if conn:
             conn.close()
 
+
+def _get_image_id(conn, product_code: str, subprod_code: Optional[str]) -> Optional[int]:
+    """Возвращает id записи или None"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id FROM public.images
+                WHERE product_code = %s AND COALESCE(subprod_code, '') = %s
+                LIMIT 1
+            """, (product_code, subprod_code or ''))
+            row = cur.fetchone()
+            return row[0] if row else None
+    except:
+        return None
+
+
+def _mark_no_image(conn, image_id: int):
+    """Ставит __NO_IMAGE__"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE public.images SET image_path = %s WHERE id = %s
+            """, (NO_IMAGE_MARKER, image_id))
+        conn.commit()
+    except:
+        conn.rollback()
+    
 
 
 
