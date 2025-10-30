@@ -108,13 +108,13 @@ def require_auth(f):
     return decorated
 
 
+# ==============================================================
 # --------------------------------------------------------------
 # 🔐 Точка входу для отримання токену
 @app.route('/login', methods=['POST'])
 def login():
 
-    if bDebug:
-        print('+++ Login')
+    log.debug("+++ POST  /login")
 
     data = request.get_json()
     if not data:
@@ -126,35 +126,31 @@ def login():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
-    if bDebug2:
-        print(f'    username: {username}; password: {password}')
+    log.debug(f"    try : username:{str(username)}; password:{str(password)}")
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
         sql = """
-            select usr.id, usr.login, usr.first_name, usr.last_name, usr.phone
-            from customers usr
-            where   usr.enabled = true 
-                and usr.login = %s 
-                and usr.phrase = %s"""
+            SELECT usr.id, usr.login, usr.first_name, usr.last_name, usr.phone
+            FROM customers usr
+            WHERE usr.enabled = true and usr.login = %s and usr.phrase = %s"""
 
         params = [username, password]
         cur.execute(sql, params)
         row = cur.fetchone()
         rows_count = cur.rowcount
+        cur.close()
+        conn.close()
 
-        if bDebug2:
-            print(f'    data fetched: {row}')
+        log.debug(f'    data fetched: {row}')
 
         if rows_count == 1:
             token = secrets.token_hex(16)
             TOKENS[token] = [row[0], row[1], row[2] + " " + row[3], time.time() + TOKEN_TTL]
-            cur.close()
-            conn.close()
-            if bDebug:
-                print('    TOKEN Result: ', TOKENS[token])
+            
+            log.debug(f'    TOKEN Result: {TOKENS[token]}')
             
             return jsonify(
                 {
@@ -164,22 +160,15 @@ def login():
                 })
 
         else:
-            cur.close()
-            conn.close()
             return jsonify({"error": "Invalid credentials"}), 401
 
     except Exception as e:
-        #cur.close()
-        #conn.close()
-        return jsonify({"error": str(e)}), 500  # Ошибка сервера
+        log.error(f"Error fetching feedbacks: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if conn:
+            conn.close()
 
-    # if USERS.get(username) != password:
-    #     return jsonify({"error": "Invalid credentials"}), 401
-
-    # token = secrets.token_hex(16)
-    # TOKENS[token] = (username, time.time() + TOKEN_TTL)
-
-    # return jsonify({"token": token})
 
 
 # ==============================================================
@@ -253,6 +242,56 @@ def get_currencies():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# ==============================================================
+# --------------------------------------------------------------
+# Новий фідбек
+@app.route('/feedback', methods=['POST'])
+@require_auth
+def create_feedback():
+    user_id = request.user_id
+    log.debug(f"POST /feedback: user_id={user_id}")
+
+    data = request.get_json(silent=True) or {}
+    feedback_text = data.get('feedback', '').strip()
+
+    # === Валидация ===
+    if not feedback_text:
+        return jsonify({"error": "Feedback text is required"}), 400
+
+    if len(feedback_text) > 500:
+        return jsonify({"error": "Feedback too long (max 500 characters)"}), 400
+
+    # === Сохранение ===
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO public.feedbacks (customer_id, "date", feedback)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (user_id, datetime.utcnow(), feedback_text))
+            feedback_id = cur.fetchone()[0]
+        conn.commit()
+
+        log.info(f"Feedback created: id={feedback_id}, user={user_id}")
+        return jsonify({
+            "message": "Feedback submitted successfully",
+            "feedback_id": feedback_id
+        }), 201
+
+    except Exception as e:
+        log.error(f"Error creating feedback: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 
 # ==============================================================
@@ -818,114 +857,153 @@ def get_order(order_id):
         return jsonify({"error": str(e)}), 500
 
 
+
 # ==============================================================
 # --------------------------------------------------------------
+# Створити замовлення від імені авторизованого користувача
 @app.route('/orders/new', methods=['POST'])
 @require_auth
 def create_order():
-    # Для POST-запроса параметры извлекаются немного по другому
-
-    # 1. Если прилетело из веб-формы из стандартного сайта, типа
-    # <form method="POST" action="/login">
-    #   <input name="username">
-    #   <input name="password">
-    # </form>
-    # то получаем их через методы типа username = request.form.get('username')
-
-    # 2. Если в теле запроса прислали JSON, как это делают в REST-запросах (это наш случай), типа
-    # Content-Type: application/json:
-    # {
-    #   "username": "Doe",
-    #   "password": "secret"
-    # }
-    # , то используем data = request.get_json(), он отдает массив и обращается к нему дальше в коде
-    # так - data['username']
-    # или так - data.get('username')
+    """
+    Створює нове замовлення.
+    Вхідні дані:
+        {
+            "currency": "UAH",
+            "items": [
+                {"product_code": "THERM-001", "quantity": 2},
+                {"product_code": "PROF-100", "subprod_code": "PROF-100-BL", "quantity": 1}
+            ]
+        }
+    """
+    log.debug(f"+++ POST /orders/new – user: {str(request.user_id)} ({str(request.user_login)})")
 
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
 
-    if not data     or 'products' not in data   or 'currency' not in data   or not request.user_id:
-        return jsonify({"error": "Missing data"}), 400  # Проверка наличия данных
+    currency = data.get('currency', '').strip().upper()
+    items = data.get('items', [])
 
-    currency = data['currency']
-    products = data['products']
+    if not currency:
+        return jsonify({"error": "Missing 'currency'"}), 400
+    if not items or not isinstance(items, list):
+        return jsonify({"error": "Missing or invalid 'items' list"}), 400
 
-    if not products or not isinstance(products, list):
-        return jsonify({"error": "products list is required"}), 400  # Проверка структуры
+    # Валідація структури елементів
+    for item in items:
+        if not isinstance(item, dict) or 'product_code' not in item or 'quantity' not in item:
+            return jsonify({"error": "Each item must have 'product_code' and 'quantity'"}), 400
+        if not isinstance(item['quantity'], int) or item['quantity'] <= 0:
+            return jsonify({"error": "Quantity must be positive integer"}), 400
 
-    #WHERE
-    #o.customer_id = """ + str(request.user_id) )
-
-
+    conn = None
     try:
         conn = get_db_connection()
-        conn.autocommit = False     # manual transactions
-        cursor = conn.cursor()
+        conn.autocommit = False
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        try:
-            # Вставляем заказ и получаем его ID
-            cursor.execute(
-                "INSERT INTO orders (customer_id, order_date, status, total) VALUES (%s, CURRENT_TIMESTAMP, 'new', 1) RETURNING id;",
-                (str(request.user_id),)
-            )
-            order_id = cursor.fetchone()[0]
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        # --- 1. Отримати поточні ціни ---
+        product_codes = [item['product_code'] for item in items]
+        subprod_codes = {item['product_code']: item.get('subprod_code') for item in items}
 
-        order_total = 0
+        price_sql = """
+            SELECT 
+                product_code,
+                COALESCE(subprod_code, '') AS subprod_code,
+                price,
+                stock_quantity
+            FROM public.price_list
+            WHERE product_code = ANY(%s)
+              AND currency_code = %s
+        """
+        cur.execute(price_sql, (product_codes, currency))
+        price_rows = cur.fetchall()
 
-        for item in products:
-            
-            product_id  = item.get('id')
-            quantity    = item.get('quantity')
-            # price     = item.get('price')
-            
-            try:
-                cursor.execute("""
-                SELECT 
-                    p.id,
-                    pl.price
-                FROM Products p
-                INNER join price_list pl ON pl.product_id = p.id AND pl.currency_code = '""" +currency+ """'
-                WHERE p.id = %s""", (product_id,))
+        if len(price_rows) != len(items):
+            missing = set(product_codes) - {row['product_code'] for row in price_rows}
+            return jsonify({"error": f"Price not found for products: {', '.join(missing)}"}), 404
 
-                results = cursor.fetchone()
-            except Exception as e:
-                return jsonify({"error": str(e)}), 500
+        # Словник: (product_code, subprod_code) → (price, stock)
+        price_map = {}
+        for row in price_rows:
+            key = (row['product_code'], row['subprod_code'] or None)
+            price_map[key] = (float(row['price']), row['stock_quantity'])
 
-            print('Product Results 0: ', results[0])
-            price = results[1]
-            print('Product Results 1: ', price)
-            #price = cursor.fetchone()[1]
-            total = price * quantity
-            order_total = order_total + total
+        # --- 2. Перевірка наявності та розрахунок totals ---
+        order_items = []
+        total_sum = 0.0
 
-            if not all([product_id, quantity, price]):
-                print('Пропускаем неполную строку')
-                continue  # Пропускаем неполные строки
+        for item in items:
+            prod_code = item['product_code']
+            sub_code = item.get('subprod_code')
+            qty = item['quantity']
+            key = (prod_code, sub_code)
 
-            try:
-                cursor.execute(
-                    "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
-                    (order_id, product_id, quantity, price)
-                )
-            except Exception as e:
-                return jsonify({"error": str(e)}), 500
+            if key not in price_map:
+                return jsonify({"error": f"Price not found for {prod_code}{'|' + sub_code if sub_code else ''}"}), 404
 
-        cursor.execute("""
-            UPDATE orders
-            SET total = """ +str(order_total)+ """
-            WHERE id = """ + str(order_id), ()
-        )
-        conn.commit()  # Сохраняем изменения
-        cursor.close()
-        conn.close()
+            price, stock = price_map[key]
+            if stock < qty:
+                return jsonify({"error": f"Insufficient stock for {prod_code}: {stock} available, {qty} requested"}), 400
 
-        return jsonify({"message": "Order created successfully", "order_id": order_id}), 201
+            item_total = price * qty
+            total_sum += item_total
+
+            order_items.append({
+                "product_code": prod_code,
+                "subprod_code": sub_code,
+                "quantity": qty,
+                "price": price,
+                "total": item_total
+            })
+
+        # --- 3. Створити замовлення ---
+        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}-{request.user_id}"
+        order_sql = """
+            INSERT INTO public.orders 
+                (customer_id, invoice_date, invoice_number, total, status, order_date)
+            VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id
+        """
+        cur.execute(order_sql, (request.user_id, invoice_number, total_sum, 'pending'))
+        order_id = cur.fetchone()['id']
+
+        # --- 4. Додати позиції ---
+        items_insert_sql = """
+            INSERT INTO public.order_items 
+                (order_id, product_code, subprod_code, quantity, price, total)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        for item in order_items:
+            cur.execute(items_insert_sql, (
+                order_id,
+                item['product_code'],
+                item['subprod_code'],
+                item['quantity'],
+                item['price'],
+                item['total']
+            ))
+
+        conn.commit()
+        log.info(f"Order created: id={order_id}, user={request.user_id}, total={total_sum}")
+
+        return jsonify({
+            "message": "Order created successfully",
+            "order_id": order_id,
+            "invoice_number": invoice_number,
+            "total": total_sum,
+            "currency": currency,
+            "items_count": len(order_items)
+        }), 201
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        if conn:
+            conn.rollback()
+        log.error(f"Error creating order: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+    finally:
+        if conn:
+            conn.close()
 
 
 
